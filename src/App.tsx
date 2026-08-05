@@ -17,7 +17,7 @@ import { ReadingsPage } from '@/pages/ReadingsPage'
 import { AdministrationPage } from '@/pages/AdministrationPage'
 import { BillingConfigPage } from '@/pages/BillingConfigPage'
 import { FlatAnalyticsPage } from '@/pages/FlatAnalyticsPage'
-import { AlertsPage } from '@/pages/AlertsPage'
+import { NotificationsPage } from '@/pages/NotificationsPage'
 import { ReportsPage } from '@/pages/ReportsPage'
 import { CacheInspectorPage } from '@/pages/CacheInspectorPage'
 import { TankerProcurementPage } from '@/pages/TankerProcurementPage'
@@ -147,13 +147,14 @@ function AppRoutes() {
           }
         />
         <Route
-          path="/alerts"
+          path="/notifications"
           element={
             <StaffRoute>
-              <AlertsPage />
+              <NotificationsPage />
             </StaffRoute>
           }
         />
+        <Route path="/alerts" element={<Navigate to="/notifications" replace />} />
         <Route
           path="/resident"
           element={

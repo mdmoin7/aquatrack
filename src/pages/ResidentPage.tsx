@@ -4,24 +4,25 @@ import { PageHeader } from '@/components/common/PageHeader'
 import { StatCard } from '@/components/common/StatCard'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { TimelineChart } from '@/components/charts/Charts'
+import { NotificationCard } from '@/components/notifications/NotificationCard'
 import { FlatReadingTimeline } from '@/components/readings/FlatReadingTimeline'
 import { useAppContext } from '@/context/AppContext'
 import { useAuth } from '@/context/AuthContext'
+import { useNotifications } from '@/hooks/useNotifications'
 import { formatCurrency, formatKL, formatMonthLabel } from '@/lib/billing'
-import { getFlatAnalytics, getAlerts } from '@/services/analyticsService'
+import { getFlatAnalytics } from '@/services/analyticsService'
 import { getFlatBillHistory } from '@/services/billingService'
 import { getFlatReadingEntries } from '@/services/readingsService'
-import type { FlatAnalytics, FlatBill, Alert, MeterReading } from '@/types'
-import { ALERT_LABELS } from '@/types'
+import type { FlatAnalytics, FlatBill, MeterReading } from '@/types'
 
 export function ResidentPage() {
   const { user } = useAuth()
   const { selectedMonth, refreshKey } = useAppContext()
+  const { active: alerts, acknowledge } = useNotifications()
   const [analytics, setAnalytics] = useState<FlatAnalytics | null>(null)
   const [history, setHistory] = useState<FlatBill[]>([])
   const [loading, setLoading] = useState(true)
 
-  const [alerts, setAlerts] = useState<Alert[]>([])
   const [readingEntries, setReadingEntries] = useState<MeterReading[]>([])
 
   const flatId = user?.flatId ?? 'A001'
@@ -32,13 +33,11 @@ export function ResidentPage() {
     void Promise.all([
       getFlatAnalytics(flatId, selectedMonth),
       getFlatBillHistory(flatId),
-      getAlerts(selectedMonth),
       getFlatReadingEntries(flatId),
-    ]).then(([a, h, al, entries]) => {
+    ]).then(([a, h, entries]) => {
       if (!cancelled) {
         setAnalytics(a)
         setHistory(h)
-        setAlerts(al.filter((item) => item.flatId === flatId && !item.acknowledged))
         setReadingEntries(entries)
         setLoading(false)
       }
@@ -144,12 +143,13 @@ export function ResidentPage() {
           </h2>
           <div className="space-y-2">
             {alerts.map((alert) => (
-              <div
+              <NotificationCard
                 key={alert.id}
-                className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800"
-              >
-                <strong>{ALERT_LABELS[alert.type]}</strong>: {alert.message}
-              </div>
+                alert={alert}
+                user={user}
+                compact
+                onAcknowledge={(id) => void acknowledge(id)}
+              />
             ))}
           </div>
         </div>

@@ -38,6 +38,7 @@ export function generateAlertsForReading(
   reading: MeterReading,
   flat: Flat,
   previousReading?: MeterReading,
+  recentAverageKL?: number,
 ): Alert[] {
   const alerts: Alert[] = []
   const base = {
@@ -89,6 +90,20 @@ export function generateAlertsForReading(
         severity: 'high',
       })
     }
+  }
+
+  if (
+    recentAverageKL &&
+    recentAverageKL > 0 &&
+    reading.consumptionKL > recentAverageKL * 2
+  ) {
+    alerts.push({
+      ...base,
+      id: `${reading.id}-unusual`,
+      type: 'unusual_usage',
+      message: `${flat.label}: usage is more than 2× your recent 3-month average`,
+      severity: 'medium',
+    })
   }
 
   return alerts

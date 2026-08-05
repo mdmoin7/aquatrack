@@ -4,6 +4,7 @@ import { DEFAULT_TANKER_CAPACITY_LITERS } from '@/lib/tanker'
 import { detectSpike, forecastNextMonth, generateAlertsForReading } from '@/lib/analytics'
 import { cacheGet, cacheSet, CacheKeys } from '@/lib/cache'
 import { dataStore } from '@/services/dataStore'
+import { acknowledgeNotification, getNotifications } from '@/services/notificationService'
 import { getFlatBills, getBillingConfig, getSocietyStats } from '@/services/billingService'
 import { getFlats, getReadingHistory } from '@/services/readingsService'
 
@@ -88,9 +89,14 @@ export async function getFlatAnalytics(
 }
 
 export async function getAlerts(month?: string) {
-  return dataStore.getAlerts(month)
+  if (!month) return dataStore.getAlerts()
+  return getNotifications(month)
 }
 
-export async function acknowledgeAlert(id: string) {
+export async function acknowledgeAlert(id: string, month?: string) {
+  if (month) {
+    await acknowledgeNotification(id, month)
+    return
+  }
   await dataStore.acknowledgeAlert(id)
 }

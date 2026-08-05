@@ -123,23 +123,49 @@ service cloud.firestore {
       }
 
       match /billingConfigs/{month} {
-        allow read: if sameSociety(societyId);
+        allow read: if canReadSociety(societyId);
         allow create, update: if sameSociety(societyId) && isAdmin();
         allow delete: if sameSociety(societyId) && isAdmin();
       }
 
       match /flatBills/{billId} {
-        allow read: if sameSociety(societyId);
+        allow read: if canReadSociety(societyId);
         allow create, update: if sameSociety(societyId) && isAdmin();
         allow delete: if sameSociety(societyId) && isAdmin();
       }
 
       match /alerts/{alertId} {
+        function alertAudience() {
+          return resource.data.get('audience', 'flat');
+        }
+
+        function meterReaderCanUpsertAlert(flatId) {
+          return isMeterReader() && (
+            flatId == 'society' ||
+            meterReaderCanAccessFlat(societyId, flatId)
+          );
+        }
+
         allow read: if sameSociety(societyId) && (
-          isAdmin() ||
-          (isResident() && resource.data.flatId == residentFlatId())
+          (alertAudience() == 'superadmin' && isSuperAdmin()) ||
+          (alertAudience() != 'superadmin' && (
+            isAdmin() ||
+            (isResident() && resource.data.flatId == residentFlatId()) ||
+            (isMeterReader() && meterReaderCanAccessFlat(societyId, resource.data.flatId))
+          ))
         );
-        allow create, update: if sameSociety(societyId) && isAdmin();
+        allow create: if sameSociety(societyId) && (
+          isAdmin() ||
+          meterReaderCanUpsertAlert(request.resource.data.flatId)
+        );
+        allow update: if sameSociety(societyId) && (
+          isAdmin() ||
+          (isResident() &&
+            resource.data.flatId == residentFlatId() &&
+            request.resource.data.acknowledged == true &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['acknowledged'])) ||
+          meterReaderCanUpsertAlert(resource.data.flatId)
+        );
         allow delete: if sameSociety(societyId) && isAdmin();
       }
 

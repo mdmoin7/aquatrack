@@ -9,6 +9,7 @@ import {
   litersToKL,
 } from '@/lib/billing'
 import { generateAlertsForReading } from '@/lib/analytics'
+import { buildSuperAdminOperationalAlerts } from '@/lib/operationalNotifications'
 import {
   aggregateFlatMonth,
   aggregateMonthlyReadings,
@@ -402,15 +403,26 @@ async function persistReading(
   await cacheInvalidate(`month-rollover:${getNextMonth(input.month)}`)
   await cacheInvalidate(CacheKeys.dashboard(input.month))
   await cacheInvalidate(CacheKeys.alerts(input.month))
+  await cacheInvalidate(`tanker:summary:${input.month}`)
   await cacheInvalidatePrefixAnalytics(input.flatId)
 
   const flat = flats.find((f) => f.id === input.flatId)
   if (flat && monthlySummary) {
     const history = await getReadingHistory(input.flatId)
     const prev = history.filter((r) => r.month < input.month).at(-1)
+    const recentMonths = history.filter((r) => r.month < input.month).slice(-3)
+    const recentAverageKL = recentMonths.length
+      ? recentMonths.reduce((sum, r) => sum + r.consumptionKL, 0) / recentMonths.length
+      : undefined
     const billingReading = summaryToBillingReading(monthlySummary)
-    const alerts = generateAlertsForReading(billingReading, flat, prev)
-    if (alerts.length) await dataStore.upsertAlerts(alerts)
+    const alerts = generateAlertsForReading(billingReading, flat, prev, recentAverageKL)
+    const operationalAlerts = await buildSuperAdminOperationalAlerts(
+      input.month,
+      flat,
+      input.enteredBy,
+    )
+    const allAlerts = [...alerts, ...operationalAlerts]
+    if (allAlerts.length) await dataStore.upsertAlerts(allAlerts)
   }
 
   return reading

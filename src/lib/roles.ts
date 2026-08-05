@@ -11,6 +11,10 @@ export function isMeterReaderRole(role: UserRole | undefined): boolean {
   return role === 'meter_reader'
 }
 
+export function isSuperAdminRole(role: UserRole | undefined): boolean {
+  return role === 'superadmin'
+}
+
 export function canManageReadings(role: UserRole | undefined): boolean {
   return role === 'admin' || role === 'superadmin'
 }

@@ -114,6 +114,11 @@ export type AlertType =
   | 'meter_reset'
   | 'leakage_suspicion'
   | 'unusual_usage'
+  | 'month_end_reading'
+  | 'tanker_procurement_update'
+
+/** Who should see this alert. Defaults to flat-scoped consumption alerts. */
+export type AlertAudience = 'flat' | 'superadmin'
 
 export interface Alert {
   id: string
@@ -125,6 +130,7 @@ export interface Alert {
   month: string
   createdAt: string
   acknowledged: boolean
+  audience?: AlertAudience
 }
 
 export interface FlatAnalytics {
@@ -177,6 +183,8 @@ export const ALERT_LABELS: Record<AlertType, string> = {
   meter_reset: 'Meter Reset',
   leakage_suspicion: 'Leakage Suspicion',
   unusual_usage: 'Unusual Usage',
+  month_end_reading: 'Month-End Reading',
+  tanker_procurement_update: 'Tanker Procurement Update',
 }
 
 export type TankerOrderStatus = 'planned' | 'ordered' | 'delivered' | 'cancelled'

@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import {
-  AlertTriangle,
   BarChart3,
   Bell,
   Building2,
@@ -23,11 +22,15 @@ import {
 import { useAuth } from '@/context/AuthContext'
 import { useAppContext } from '@/context/AppContext'
 import { DataModeIndicator } from '@/components/common/DataModeIndicator'
+import { NotificationBadge } from '@/components/notifications/NotificationBadge'
+import { useNotifications } from '@/hooks/useNotifications'
 import { formatMonthLabel, getPreviousMonths } from '@/lib/billing'
+import { canAccessNotifications } from '@/services/notificationService'
 
 const meterReaderNav = [
   { to: '/block-dashboard', label: 'My Block', icon: LayoutDashboard },
   { to: '/readings', label: 'Enter Readings', icon: Gauge },
+  { to: '/notifications', label: 'Notifications', icon: Bell },
 ]
 
 const adminNav = [
@@ -39,7 +42,7 @@ const adminNav = [
   { to: '/billing', label: 'Billing Config', icon: Settings },
   { to: '/users', label: 'Users', icon: Users },
   { to: '/analytics', label: 'Flat Analytics', icon: BarChart3 },
-  { to: '/alerts', label: 'Alerts', icon: Bell },
+  { to: '/notifications', label: 'Notifications', icon: Bell },
   { to: '/reports', label: 'Reports', icon: FileText },
   { to: '/cache', label: 'Cache Inspector', icon: Database },
 ]
@@ -47,7 +50,7 @@ const adminNav = [
 const residentNav = [
   { to: '/resident', label: 'My Consumption', icon: Droplets },
   { to: '/analytics', label: 'Analytics', icon: BarChart3 },
-  { to: '/alerts', label: 'Alerts', icon: AlertTriangle },
+  { to: '/notifications', label: 'Notifications', icon: Bell },
 ]
 
 const guestNav = [
@@ -58,9 +61,11 @@ const guestNav = [
 export function AppLayout() {
   const { user, signOut } = useAuth()
   const { selectedMonth, setSelectedMonth } = useAppContext()
+  const { unreadCount } = useNotifications()
   const navigate = useNavigate()
   const months = getPreviousMonths(12)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const showNotificationBadge = canAccessNotifications(user?.role)
 
   const nav =
     user?.role === 'guest'
@@ -133,6 +138,9 @@ export function AppLayout() {
             >
               <Icon className="h-4 w-4 shrink-0" />
               <span className="truncate">{label}</span>
+              {showNotificationBadge && to === '/notifications' && (
+                <NotificationBadge count={unreadCount} className="ml-auto" />
+              )}
             </NavLink>
           ))}
         </nav>
