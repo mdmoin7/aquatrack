@@ -6,6 +6,7 @@ import {
   Bell,
   Building2,
   ChevronDown,
+  ClipboardList,
   Database,
   Droplets,
   FileText,
@@ -24,8 +25,14 @@ import { useAppContext } from '@/context/AppContext'
 import { DataModeIndicator } from '@/components/common/DataModeIndicator'
 import { formatMonthLabel, getPreviousMonths } from '@/lib/billing'
 
+const meterReaderNav = [
+  { to: '/block-dashboard', label: 'My Block', icon: LayoutDashboard },
+  { to: '/readings', label: 'Enter Readings', icon: Gauge },
+]
+
 const adminNav = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { to: '/block-dashboard', label: 'Block Dashboard', icon: ClipboardList },
   { to: '/readings', label: 'Readings', icon: Gauge },
   { to: '/procurement', label: 'Tanker Procurement', icon: Truck },
   { to: '/administration', label: 'Administration', icon: Building2 },
@@ -60,7 +67,9 @@ export function AppLayout() {
       ? guestNav
       : user?.role === 'resident'
         ? residentNav
-        : adminNav
+        : user?.role === 'meter_reader'
+          ? meterReaderNav
+          : adminNav
 
   const handleSignOut = async () => {
     await signOut()

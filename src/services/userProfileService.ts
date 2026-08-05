@@ -1,4 +1,4 @@
-import type { User, UserRole } from '@/types'
+import type { BlockId, User, UserRole } from '@/types'
 import { getActiveSocietyId } from '@/lib/firestorePaths'
 import { isSuperAdminEmail } from '@/lib/superAdmin'
 import { dataStore } from '@/services/dataStore'
@@ -69,6 +69,7 @@ export async function createUserProfile(input: {
   role: UserRole
   flatId?: string
   societyId?: string
+  assignedBlocks?: BlockId[]
 }): Promise<User> {
   const profile: User = {
     id: input.id,
@@ -77,6 +78,7 @@ export async function createUserProfile(input: {
     role: input.role,
     societyId: input.societyId ?? getActiveSocietyId(),
     ...(input.flatId ? { flatId: input.flatId } : {}),
+    ...(input.assignedBlocks?.length ? { assignedBlocks: input.assignedBlocks } : {}),
   }
   await saveProfile(profile)
   return profile
@@ -84,7 +86,7 @@ export async function createUserProfile(input: {
 
 export async function updateUserProfile(
   uid: string,
-  updates: Partial<Pick<User, 'displayName' | 'role' | 'flatId' | 'societyId'>>,
+  updates: Partial<Pick<User, 'displayName' | 'role' | 'flatId' | 'societyId' | 'assignedBlocks'>>,
 ): Promise<User> {
   const existing = await getProfile(uid)
   if (!existing) throw new Error('User profile not found')

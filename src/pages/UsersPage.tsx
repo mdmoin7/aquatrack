@@ -10,11 +10,12 @@ import {
   listSocietyUsers,
   updateUserProfile,
 } from '@/services/userProfileService'
-import type { Flat, User, UserRole } from '@/types'
+import type { BlockId, Flat, User, UserRole } from '@/types'
+import { BLOCK_LABELS } from '@/types'
 import { getAuthErrorMessage } from '@/lib/authErrors'
 
-const ADMIN_ROLES: UserRole[] = ['admin', 'resident', 'guest']
-const SUPERADMIN_ROLES: UserRole[] = ['superadmin', 'admin', 'resident', 'guest']
+const ADMIN_ROLES: UserRole[] = ['admin', 'resident', 'guest', 'meter_reader']
+const SUPERADMIN_ROLES: UserRole[] = ['superadmin', 'admin', 'resident', 'guest', 'meter_reader']
 
 export function UsersPage() {
   const { user: currentUser } = useAuth()
@@ -30,6 +31,7 @@ export function UsersPage() {
     displayName: '',
     role: 'resident' as UserRole,
     flatId: '',
+    assignedBlocks: [] as BlockId[],
   })
 
   const isSuperAdmin = currentUser?.role === 'superadmin'
@@ -48,7 +50,7 @@ export function UsersPage() {
   }, [])
 
   const resetForm = () => {
-    setForm({ id: '', email: '', displayName: '', role: 'resident', flatId: '' })
+    setForm({ id: '', email: '', displayName: '', role: 'resident', flatId: '', assignedBlocks: [] })
     setEditingId(null)
     setShowForm(false)
     setError('')
@@ -67,6 +69,7 @@ export function UsersPage() {
       displayName: u.displayName,
       role: u.role,
       flatId: u.flatId ?? '',
+      assignedBlocks: u.assignedBlocks ?? [],
     })
     setShowForm(true)
     setError('')
@@ -87,6 +90,7 @@ export function UsersPage() {
           displayName: form.displayName,
           role: form.role,
           flatId: form.flatId || undefined,
+          assignedBlocks: form.role === 'meter_reader' ? form.assignedBlocks : undefined,
         })
       } else {
         if (!form.id.trim()) throw new Error('Firebase User ID is required')
@@ -96,6 +100,7 @@ export function UsersPage() {
           displayName: form.displayName,
           role: form.role,
           flatId: form.flatId || undefined,
+          assignedBlocks: form.role === 'meter_reader' ? form.assignedBlocks : undefined,
         })
       }
       resetForm()
@@ -113,6 +118,11 @@ export function UsersPage() {
       name: 'Flat',
       selector: (row: User) =>
         flats.find((f) => f.id === row.flatId)?.label ?? row.flatId ?? '—',
+    },
+    {
+      name: 'Blocks',
+      selector: (row: User) =>
+        row.assignedBlocks?.map((b) => BLOCK_LABELS[b]).join(', ') ?? '—',
     },
     {
       name: 'Actions',
@@ -229,6 +239,35 @@ export function UsersPage() {
                 ))}
               </select>
             </div>
+            {form.role === 'meter_reader' && (
+              <div className="sm:col-span-2">
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Assigned blocks
+                </label>
+                <div className="flex flex-wrap gap-3">
+                  {(Object.keys(BLOCK_LABELS) as BlockId[]).map((block) => (
+                    <label
+                      key={block}
+                      className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={form.assignedBlocks.includes(block)}
+                        onChange={(e) => {
+                          setForm({
+                            ...form,
+                            assignedBlocks: e.target.checked
+                              ? [...form.assignedBlocks, block]
+                              : form.assignedBlocks.filter((b) => b !== block),
+                          })
+                        }}
+                      />
+                      {BLOCK_LABELS[block]}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
           {error && <p className="mt-3 text-sm text-rose-600">{error}</p>}
           <div className="mt-4 flex gap-2">

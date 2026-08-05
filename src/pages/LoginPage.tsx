@@ -70,6 +70,13 @@ export function LoginPage() {
               >
                 Sign in as Resident
               </button>
+              <button
+                type="button"
+                onClick={() => signInDemo('meter_reader')}
+                className="w-full rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm font-semibold text-violet-800 hover:bg-violet-100"
+              >
+                Sign in as Meter Reader
+              </button>
             </div>
           ) : (
             <div className="space-y-4">

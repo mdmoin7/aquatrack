@@ -35,7 +35,7 @@ interface AuthContextValue {
   signIn: (email: string, password: string) => Promise<void>
   signInWithGoogle: () => Promise<void>
   signUp: (email: string, password: string, displayName: string) => Promise<void>
-  signInDemo: (role: 'admin' | 'resident') => void
+  signInDemo: (role: 'admin' | 'resident' | 'meter_reader') => void
   signInAsGuest: () => void
   signOut: () => Promise<void>
   resetPassword: (email: string) => Promise<void>
@@ -134,7 +134,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await signUpWithEmail(email, password, displayName)
   }
 
-  const signInDemo = (role: 'admin' | 'resident') => {
+  const signInDemo = (role: 'admin' | 'resident' | 'meter_reader') => {
     const users = localStore.getUsers()
     const demoUser = users.find((u) => u.role === role) ?? users[0]
     if (demoUser) {

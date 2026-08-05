@@ -1,10 +1,33 @@
 import path from 'node:path'
+import { execSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
+const pkg = JSON.parse(readFileSync('./package.json', 'utf-8')) as { version: string }
+
+function getGitCommit(): string {
+  try {
+    return execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString()
+      .trim()
+  } catch {
+    return 'local'
+  }
+}
+
+const appVersion = pkg.version
+const buildTime = new Date().toISOString()
+const gitCommit = getGitCommit()
+
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(appVersion),
+    __BUILD_TIME__: JSON.stringify(buildTime),
+    __GIT_COMMIT__: JSON.stringify(gitCommit),
+  },
   plugins: [
     react(),
     tailwindcss(),
@@ -25,13 +48,23 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        navigateFallback: '/index.html',
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/firestore\.googleapis\.com\/.*/i,
             handler: 'NetworkFirst',
             options: {
               cacheName: 'firestore-cache',
-              expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 },
+              expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 * 7 },
+              networkTimeoutSeconds: 8,
+            },
+          },
+          {
+            urlPattern: /^https:\/\/.*\.googleapis\.com\/.*/i,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'google-apis',
+              expiration: { maxEntries: 50, maxAgeSeconds: 60 * 60 * 24 },
             },
           },
         ],

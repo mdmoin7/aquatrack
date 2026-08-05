@@ -1,15 +1,17 @@
 import { useEffect } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AppLayout } from '@/components/layout/AppLayout'
-import { AdminRoute, AnalyticsRoute, GuestRoute, ProtectedRoute, SocietyReadingsRoute, StaffRoute } from '@/components/common/ProtectedRoute'
+import { AdminRoute, AnalyticsRoute, BlockDashboardRoute, GuestRoute, ProtectedRoute, SocietyReadingsRoute, StaffRoute } from '@/components/common/ProtectedRoute'
 import { AppProvider } from '@/context/AppContext'
 import { AuthProvider } from '@/context/AuthContext'
 import { CacheProvider } from '@/context/CacheContext'
 import { ensureLocalSeed } from '@/data/seed'
+import { flushReadingQueue } from '@/services/readingsService'
 import { LoginPage } from '@/pages/LoginPage'
 import { RegisterPage } from '@/pages/RegisterPage'
 import { ForgotPasswordPage } from '@/pages/ForgotPasswordPage'
 import { SetupProfilePage } from '@/pages/SetupProfilePage'
+import { BlockDashboardPage } from '@/pages/BlockDashboardPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { ReadingsPage } from '@/pages/ReadingsPage'
 import { AdministrationPage } from '@/pages/AdministrationPage'
@@ -64,6 +66,14 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       >
+        <Route
+          path="/block-dashboard"
+          element={
+            <BlockDashboardRoute>
+              <BlockDashboardPage />
+            </BlockDashboardRoute>
+          }
+        />
         <Route
           path="/"
           element={
@@ -161,6 +171,10 @@ function AppRoutes() {
 export default function App() {
   useEffect(() => {
     void ensureLocalSeed()
+    if (navigator.onLine) void flushReadingQueue()
+    const onOnline = () => void flushReadingQueue()
+    window.addEventListener('online', onOnline)
+    return () => window.removeEventListener('online', onOnline)
   }, [])
 
   return (

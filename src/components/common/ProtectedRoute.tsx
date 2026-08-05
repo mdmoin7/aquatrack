@@ -1,7 +1,12 @@
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
-import { canManageReadings, guestHomePath, isGuestRole } from '@/lib/roles'
+import {
+  canAccessSocietyReadings,
+  homePath,
+  isGuestRole,
+  isMeterReaderRole,
+} from '@/lib/roles'
 
 export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading, isDemo, profileMissing } = useAuth()
@@ -22,21 +27,33 @@ export function AdminRoute({ children }: { children: React.ReactNode }) {
 
   if (loading) return <LoadingSpinner />
   if (!user) return <Navigate to="/login" replace />
-  if (isGuestRole(user.role) || user.role === 'resident') {
-    return <Navigate to={guestHomePath(user.role)} replace />
+  if (isGuestRole(user.role) || user.role === 'resident' || isMeterReaderRole(user.role)) {
+    return <Navigate to={homePath(user.role)} replace />
   }
 
   return <>{children}</>
 }
 
-/** Readings & society-wide meter data — admin and guest only. */
+export function BlockDashboardRoute({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth()
+
+  if (loading) return <LoadingSpinner />
+  if (!user) return <Navigate to="/login" replace />
+  if (isGuestRole(user.role) || user.role === 'resident') {
+    return <Navigate to={homePath(user.role)} replace />
+  }
+
+  return <>{children}</>
+}
+
+/** Readings & society-wide meter data — admin, meter reader, and guest. */
 export function SocietyReadingsRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth()
 
   if (loading) return <LoadingSpinner />
   if (!user) return <Navigate to="/login" replace />
   if (user.role === 'resident') return <Navigate to="/resident" replace />
-  if (!canManageReadings(user.role) && !isGuestRole(user.role)) {
+  if (!canAccessSocietyReadings(user.role)) {
     return <Navigate to="/login" replace />
   }
 
@@ -69,7 +86,7 @@ export function GuestRoute({ children }: { children: React.ReactNode }) {
 
   if (loading) return <LoadingSpinner label="Loading..." />
   if (user) {
-    return <Navigate to={guestHomePath(user.role)} replace />
+    return <Navigate to={homePath(user.role)} replace />
   }
 
   return <>{children}</>

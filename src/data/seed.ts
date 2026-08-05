@@ -59,6 +59,14 @@ function buildOfflineAuthUsers(): User[] {
       flatId: 'A001',
       societyId: getActiveSocietyId(),
     },
+    {
+      id: 'meter-a',
+      email: 'meter@aquatrack.local',
+      displayName: 'Block A Meter Reader',
+      role: 'meter_reader',
+      assignedBlocks: ['A'],
+      societyId: getActiveSocietyId(),
+    },
   ]
 }
 

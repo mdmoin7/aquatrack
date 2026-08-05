@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'resident' | 'guest' | 'superadmin'
+export type UserRole = 'admin' | 'resident' | 'guest' | 'superadmin' | 'meter_reader'
 
 export type BlockId = 'A' | 'B' | 'C' | 'COMMON'
 
@@ -9,6 +9,8 @@ export interface User {
   role: UserRole
   flatId?: string
   societyId?: string
+  /** Blocks a meter reader may enter readings for. */
+  assignedBlocks?: BlockId[]
 }
 
 export interface Flat {

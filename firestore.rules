@@ -43,6 +43,31 @@ service cloud.firestore {
       return hasProfile() && userDoc().role == 'resident';
     }
 
+    function isMeterReader() {
+      return hasProfile() && userDoc().role == 'meter_reader';
+    }
+
+    function flatBlock(societyId, flatId) {
+      return get(/databases/$(database)/documents/societies/$(societyId)/flats/$(flatId)).data.block;
+    }
+
+    function meterReaderCanAccessFlat(societyId, flatId) {
+      return isMeterReader() &&
+        flatBlock(societyId, flatId) in userDoc().get('assignedBlocks', []);
+    }
+
+    function canWriteReading(societyId, flatId) {
+      return isAdmin() ||
+        (isResident() && flatId == residentFlatId()) ||
+        meterReaderCanAccessFlat(societyId, flatId);
+    }
+
+    function canReadReading(societyId, flatId) {
+      return isAdmin() ||
+        isMeterReader() ||
+        (isResident() && flatId == residentFlatId());
+    }
+
     function sameSociety(societyId) {
       return hasProfile() && userDoc().societyId == societyId;
     }
@@ -85,18 +110,14 @@ service cloud.firestore {
 
       match /readings/{readingId} {
         allow read: if isGuestReader() || (sameSociety(societyId) && (
-          isAdmin() ||
-          (isResident() && resource.data.flatId == residentFlatId())
+          canReadReading(societyId, resource.data.flatId)
         ));
         allow create: if sameSociety(societyId) && (
-          isAdmin() ||
-          (isResident() && request.resource.data.flatId == residentFlatId())
+          canWriteReading(societyId, request.resource.data.flatId)
         );
         allow update: if sameSociety(societyId) && (
-          isAdmin() ||
-          (isResident() &&
-            resource.data.flatId == residentFlatId() &&
-            request.resource.data.flatId == residentFlatId())
+          canWriteReading(societyId, resource.data.flatId) &&
+          request.resource.data.flatId == resource.data.flatId
         );
         allow delete: if sameSociety(societyId) && isAdmin();
       }

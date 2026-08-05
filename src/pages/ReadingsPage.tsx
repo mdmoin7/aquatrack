@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { Info, Pencil, Plus, Trash2, Upload, X } from 'lucide-react'
 import DataTable from 'react-data-table-component'
+import { OfflineSyncBanner } from '@/components/common/OfflineSyncBanner'
 import { PageHeader } from '@/components/common/PageHeader'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { FlatReadingTimeline } from '@/components/readings/FlatReadingTimeline'
@@ -8,7 +9,7 @@ import { MonthRolloverPanel } from '@/components/readings/MonthRolloverPanel'
 import { ReadingUploadPanel } from '@/components/readings/ReadingUploadPanel'
 import { useAppContext } from '@/context/AppContext'
 import { useAuth } from '@/context/AuthContext'
-import { canManageReadings } from '@/lib/roles'
+import { canEnterReadings, canManageReadings, filterFlatsForUser } from '@/lib/roles'
 import {
   formatKL,
   formatMonthLabel,
@@ -36,7 +37,9 @@ import type { MonthRolloverStatus } from '@/lib/monthRollover'
 export function ReadingsPage() {
   const { selectedMonth, refresh } = useAppContext()
   const { user } = useAuth()
-  const canEdit = canManageReadings(user?.role)
+  const canEdit = canEnterReadings(user?.role)
+  const canDelete = canManageReadings(user?.role)
+  const canUpload = canManageReadings(user?.role)
   const [readings, setReadings] = useState<MeterReading[]>([])
   const [summaries, setSummaries] = useState<MonthlyFlatSummary[]>([])
   const [flats, setFlats] = useState<Flat[]>([])
@@ -70,14 +73,14 @@ export function ReadingsPage() {
     ])
     setReadings(r)
     setSummaries(s)
-    setFlats(f)
+    setFlats(filterFlatsForUser(f, user))
     setRolloverStatus(rollover)
     setLoading(false)
   }
 
   useEffect(() => {
     void load()
-  }, [selectedMonth])
+  }, [selectedMonth, user?.id, user?.role, user?.assignedBlocks?.join(',')])
 
   useEffect(() => {
     if (!form.flatId || editingId) {
@@ -244,13 +247,15 @@ export function ReadingsPage() {
             >
               <Pencil className="h-4 w-4" />
             </button>
-            <button
-              type="button"
-              onClick={() => void handleDelete(row.id)}
-              className="rounded-lg p-2 text-rose-500 hover:bg-rose-50"
-            >
-              <Trash2 className="h-4 w-4" />
-            </button>
+            {canDelete && (
+              <button
+                type="button"
+                onClick={() => void handleDelete(row.id)}
+                className="rounded-lg p-2 text-rose-500 hover:bg-rose-50"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            )}
           </div>
         ) : null,
       omit: !canEdit,
@@ -291,23 +296,27 @@ export function ReadingsPage() {
         title="Meter Readings"
         description={
           canEdit
-            ? `Multiple entries per flat allowed for ${formatMonthLabel(selectedMonth)} — billing uses monthly totals only`
+            ? user?.role === 'meter_reader'
+              ? `Enter readings for your assigned block(s) — ${formatMonthLabel(selectedMonth)}`
+              : `Multiple entries per flat allowed for ${formatMonthLabel(selectedMonth)} — billing uses monthly totals only`
             : `View-only society readings for ${formatMonthLabel(selectedMonth)}`
         }
         actions={
           canEdit ? (
             <>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowUpload(true)
-                  setShowForm(false)
-                }}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-              >
-                <Upload className="h-4 w-4" />
-                Upload CSV
-              </button>
+              {canUpload && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowUpload(true)
+                    setShowForm(false)
+                  }}
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  <Upload className="h-4 w-4" />
+                  Upload CSV
+                </button>
+              )}
               <button
                 type="button"
                 onClick={openAddForm}
@@ -321,6 +330,8 @@ export function ReadingsPage() {
         }
       />
 
+      {canEdit && <OfflineSyncBanner />}
+
       {rolloverStatus && (
         <MonthRolloverPanel
           status={rolloverStatus}
@@ -332,7 +343,7 @@ export function ReadingsPage() {
         />
       )}
 
-      {canEdit && showUpload && (
+      {canEdit && canUpload && showUpload && (
         <ReadingUploadPanel
           month={selectedMonth}
           flats={flats}

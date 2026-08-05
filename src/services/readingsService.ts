@@ -18,6 +18,14 @@ import {
 } from '@/lib/readings'
 import { cacheGet, cacheInvalidate, cacheSet, CacheKeys } from '@/lib/cache'
 import {
+  enqueuePendingReading,
+  listPendingReadings,
+  pendingToMeterReading,
+  removePendingReading,
+  updatePendingError,
+  type PendingReadingInput,
+} from '@/services/readingQueueService'
+import {
   buildFlatRolloverInfo,
   buildMonthRolloverStatus,
   type MonthRolloverStatus,
@@ -228,10 +236,18 @@ export async function getFlats(): Promise<Flat[]> {
 
 export async function getReadings(month: string): Promise<MeterReading[]> {
   const cached = await cacheGet<MeterReading[]>(CacheKeys.readings(month))
-  if (cached) return cached
-  const readings = sortReadingsChronologically(await dataStore.getReadings(month))
-  await cacheSet(CacheKeys.readings(month), readings)
-  return readings
+  const stored = cached ?? sortReadingsChronologically(await dataStore.getReadings(month))
+  if (!cached) await cacheSet(CacheKeys.readings(month), stored)
+
+  const pending = (await listPendingReadings()).filter((p) => p.input.month === month)
+  if (pending.length === 0) return stored
+
+  const storedIds = new Set(stored.map((r) => r.id))
+  const merged = [
+    ...stored,
+    ...pending.map(pendingToMeterReading).filter((r) => !storedIds.has(r.id)),
+  ]
+  return sortReadingsChronologically(merged)
 }
 
 export async function getMonthlySummaries(month: string): Promise<MonthlyFlatSummary[]> {
@@ -265,15 +281,45 @@ export async function getFlatReadingEntries(
   return sortReadingsChronologically(entries)
 }
 
+export type SaveReadingInput = PendingReadingInput
+
 export async function saveReading(
-  input: {
-    flatId: string
-    month: string
-    closingReading: number
-    initialOpeningReading?: number
-    enteredBy: string
-    enteredByRole: UserRole
-  },
+  input: SaveReadingInput,
+  existingId?: string,
+): Promise<MeterReading> {
+  if (!navigator.onLine) {
+    const pending = await enqueuePendingReading(input, existingId)
+    await cacheInvalidate(CacheKeys.readings(input.month))
+    await cacheInvalidate(`monthly-summaries:${input.month}`)
+    return pendingToMeterReading(pending)
+  }
+  return persistReading(input, existingId)
+}
+
+export async function flushReadingQueue(): Promise<{ synced: number; failed: number }> {
+  if (!navigator.onLine) return { synced: 0, failed: 0 }
+
+  const pending = await listPendingReadings()
+  let synced = 0
+  let failed = 0
+
+  for (const item of pending) {
+    try {
+      await persistReading(item.input, item.existingId)
+      await removePendingReading(item.queueId)
+      synced++
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Sync failed'
+      await updatePendingError(item.queueId, message)
+      failed++
+    }
+  }
+
+  return { synced, failed }
+}
+
+async function persistReading(
+  input: SaveReadingInput,
   existingId?: string,
 ): Promise<MeterReading> {
   const config = await dataStore.getBillingConfig(input.month)
@@ -472,4 +518,45 @@ export async function bulkImportReadings(
   }
 
   return result
+}
+
+export interface BlockDashboardStats {
+  block: BlockId
+  month: string
+  flatCount: number
+  completeCount: number
+  totalConsumptionKL: number
+  pendingFlatLabels: string[]
+  flats: Array<{ flat: Flat; consumptionKL: number; hasReading: boolean }>
+}
+
+export async function getBlockDashboardStats(
+  month: string,
+  block: BlockId,
+): Promise<BlockDashboardStats> {
+  const [flats, summaries] = await Promise.all([getFlats(), getMonthlySummaries(month)])
+  const blockFlats = flats.filter((f) => f.block === block)
+  const summaryByFlat = Object.fromEntries(summaries.map((s) => [s.flatId, s]))
+
+  const flatRows = blockFlats.map((flat) => {
+    const summary = summaryByFlat[flat.id]
+    return {
+      flat,
+      consumptionKL: summary?.consumptionKL ?? 0,
+      hasReading: Boolean(summary && summary.readingCount > 0),
+    }
+  })
+
+  const completeCount = flatRows.filter((r) => r.hasReading).length
+  const totalConsumptionKL = flatRows.reduce((sum, r) => sum + r.consumptionKL, 0)
+
+  return {
+    block,
+    month,
+    flatCount: blockFlats.length,
+    completeCount,
+    totalConsumptionKL,
+    pendingFlatLabels: flatRows.filter((r) => !r.hasReading).map((r) => r.flat.label),
+    flats: flatRows.sort((a, b) => a.flat.label.localeCompare(b.flat.label)),
+  }
 }
