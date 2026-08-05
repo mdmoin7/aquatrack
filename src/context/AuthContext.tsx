@@ -19,6 +19,12 @@ import {
   getProfile,
   saveProfile,
 } from '@/services/userProfileService'
+import {
+  buildGuestUser,
+  clearGuestSession,
+  readGuestSession,
+  writeGuestSession,
+} from '@/lib/guestSession'
 import type { User as FirebaseUser } from 'firebase/auth'
 
 interface AuthContextValue {
@@ -30,6 +36,7 @@ interface AuthContextValue {
   signInWithGoogle: () => Promise<void>
   signUp: (email: string, password: string, displayName: string) => Promise<void>
   signInDemo: (role: 'admin' | 'resident') => void
+  signInAsGuest: () => void
   signOut: () => Promise<void>
   resetPassword: (email: string) => Promise<void>
   refreshProfile: () => Promise<void>
@@ -67,13 +74,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const applyProfile = useCallback(async (fbUser: FirebaseUser | null) => {
     if (!fbUser) {
-      setUser(null)
-      setProfileMissing(false)
-      setFirebaseUser(null)
+      const guest = readGuestSession()
+      if (guest) {
+        if (guest.societyId) setActiveSocietyId(guest.societyId)
+        setUser(guest)
+        setProfileMissing(false)
+        setFirebaseUser(null)
+      } else {
+        setUser(null)
+        setProfileMissing(false)
+        setFirebaseUser(null)
+      }
       setLoading(false)
       return
     }
 
+    clearGuestSession()
     setFirebaseUser(fbUser)
     const { user: resolved, profileMissing: missing } = await resolveUserProfile(fbUser)
     setUser(resolved)
@@ -82,6 +98,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
+    const guest = readGuestSession()
+    if (guest) {
+      if (guest.societyId) setActiveSocietyId(guest.societyId)
+      setUser(guest)
+      setProfileMissing(false)
+      setLoading(false)
+      if (isDemo) return
+      return subscribeToAuthState((fbUser) => {
+        if (fbUser) void applyProfile(fbUser)
+      })
+    }
+
     if (isDemo) {
       const saved = sessionStorage.getItem('aquatrack-demo-user')
       if (saved) setUser(JSON.parse(saved) as User)
@@ -116,7 +144,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const signInAsGuest = () => {
+    const guestUser = buildGuestUser()
+    if (guestUser.societyId) setActiveSocietyId(guestUser.societyId)
+    setUser(guestUser)
+    setProfileMissing(false)
+    setFirebaseUser(null)
+    writeGuestSession(guestUser)
+  }
+
   const signOut = async () => {
+    clearGuestSession()
     if (isDemo) {
       setUser(null)
       setProfileMissing(false)
@@ -124,6 +162,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return
     }
     await signOutUser()
+    setUser(null)
+    setProfileMissing(false)
+    setFirebaseUser(null)
   }
 
   const resetPassword = async (email: string) => {
@@ -158,6 +199,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signInWithGoogle: handleGoogleSignIn,
         signUp,
         signInDemo,
+        signInAsGuest,
         signOut,
         resetPassword,
         refreshProfile,

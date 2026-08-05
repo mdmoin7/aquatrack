@@ -15,6 +15,14 @@ service cloud.firestore {
       return isSignedIn() && authEmail() == 'mohammad.nicoll@gmail.com';
     }
 
+    function isGuestReader() {
+      return !isSignedIn();
+    }
+
+    function canReadSociety(societyId) {
+      return isGuestReader() || sameSociety(societyId);
+    }
+
     function userDoc() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
@@ -71,15 +79,15 @@ service cloud.firestore {
     match /societies/{societyId} {
 
       match /flats/{flatId} {
-        allow read: if sameSociety(societyId);
+        allow read: if canReadSociety(societyId);
         allow write: if sameSociety(societyId) && isAdmin();
       }
 
       match /readings/{readingId} {
-        allow read: if sameSociety(societyId) && (
+        allow read: if isGuestReader() || (sameSociety(societyId) && (
           isAdmin() ||
           (isResident() && resource.data.flatId == residentFlatId())
-        );
+        ));
         allow create: if sameSociety(societyId) && (
           isAdmin() ||
           (isResident() && request.resource.data.flatId == residentFlatId())

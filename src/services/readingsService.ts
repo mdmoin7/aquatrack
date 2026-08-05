@@ -1,6 +1,7 @@
 import type { BlockId, Flat, MeterReading, MonthlyFlatSummary, UserRole } from '@/types'
 import {
   calculateConsumption,
+  formatMonthLabel,
   getCurrentMonth,
   getNextMonth,
   getPreviousMonth,
@@ -16,6 +17,11 @@ import {
   summaryToBillingReading,
 } from '@/lib/readings'
 import { cacheGet, cacheInvalidate, cacheSet, CacheKeys } from '@/lib/cache'
+import {
+  buildFlatRolloverInfo,
+  buildMonthRolloverStatus,
+  type MonthRolloverStatus,
+} from '@/lib/monthRollover'
 import { dataStore } from '@/services/dataStore'
 
 function generateId(): string {
@@ -24,7 +30,7 @@ function generateId(): string {
 
 export interface OpeningReadingInfo {
   openingReading: number | null
-  source: 'previous_closing' | 'previous_entry' | 'initial' | 'none'
+  source: 'previous_closing' | 'previous_entry' | 'initial' | 'missing_prior' | 'none'
   previousMonth?: string
   previousClosing?: number
   entryNumber?: number
@@ -62,7 +68,110 @@ export async function resolveOpeningReading(
     }
   }
 
+  const hadEarlierHistory = allReadings.some(
+    (r) => r.flatId === flatId && r.month < previousMonth,
+  )
+  if (hadEarlierHistory) {
+    return {
+      openingReading: null,
+      source: 'missing_prior',
+      previousMonth,
+      entryNumber: 1,
+    }
+  }
+
   return { openingReading: null, source: 'none', entryNumber: 1 }
+}
+
+export async function getMonthRolloverStatus(month: string): Promise<MonthRolloverStatus> {
+  const cacheKey = `month-rollover:${month}`
+  const cached = await cacheGet<MonthRolloverStatus>(cacheKey)
+  if (cached) return cached
+
+  const [flats, allReadings] = await Promise.all([getFlats(), dataStore.getReadings()])
+  const status = buildMonthRolloverStatus(month, flats, allReadings)
+  await cacheSet(cacheKey, status, 60_000)
+  return status
+}
+
+export async function repairFlatRolloverOpening(
+  flatId: string,
+  month: string,
+): Promise<boolean> {
+  const allReadings = await dataStore.getReadings()
+  const flats = await getFlats()
+  const flat = flats.find((f) => f.id === flatId)
+  if (!flat) throw new Error('Flat not found.')
+
+  const info = buildFlatRolloverInfo(flat, month, allReadings)
+  if (info.status !== 'mismatch' || info.expectedOpening === undefined) return false
+
+  const entries = getFlatReadingsForMonth(flatId, month, allReadings)
+  const first = entries[0]
+  if (!first) return false
+
+  const config = await dataStore.getBillingConfig(month)
+  if (config?.locked) throw new Error('Billing for this month is locked.')
+
+  const consumptionLiters = calculateConsumption(info.expectedOpening, first.closingReading)
+  const now = new Date().toISOString()
+  const updated: MeterReading = {
+    ...first,
+    openingReading: info.expectedOpening,
+    consumptionLiters,
+    consumptionKL: litersToKL(consumptionLiters),
+    updatedAt: now,
+    auditTrail: [
+      ...first.auditTrail,
+      {
+        action: 'update',
+        userId: 'system',
+        userName: 'System (month rollover repair)',
+        timestamp: now,
+        previousValues: {
+          openingReading: first.openingReading,
+          consumptionLiters: first.consumptionLiters,
+          consumptionKL: first.consumptionKL,
+        },
+      },
+    ],
+  }
+
+  await dataStore.upsertReading(updated)
+  await cacheInvalidate(CacheKeys.readings(month))
+  await cacheInvalidate(`monthly-summaries:${month}`)
+  await cacheInvalidate(`month-rollover:${month}`)
+  await cacheInvalidate(CacheKeys.dashboard(month))
+  return true
+}
+
+export async function repairAllRolloverMismatches(month: string): Promise<number> {
+  const status = await getMonthRolloverStatus(month)
+  let fixed = 0
+  for (const flat of status.flats) {
+    if (flat.status === 'mismatch') {
+      const didFix = await repairFlatRolloverOpening(flat.flatId, month)
+      if (didFix) fixed++
+    }
+  }
+  return fixed
+}
+
+function assertFlatCanAddReading(
+  flatId: string,
+  month: string,
+  allReadings: MeterReading[],
+  flats: Flat[],
+): void {
+  const flat = flats.find((f) => f.id === flatId)
+  if (!flat) return
+
+  const info = buildFlatRolloverInfo(flat, month, allReadings)
+  if (info.status === 'missing_prior') {
+    throw new Error(
+      `Cannot add reading: ${flat.label} has no ${formatMonthLabel(info.previousMonth)} closing. Complete the prior month first.`,
+    )
+  }
 }
 
 async function cascadeOpeningToNextMonth(
@@ -172,6 +281,13 @@ export async function saveReading(
     throw new Error('Billing for this month is locked. Readings cannot be modified.')
   }
 
+  const allReadings = await dataStore.getReadings()
+  const flats = await getFlats()
+
+  if (!existingId) {
+    assertFlatCanAddReading(input.flatId, input.month, allReadings, flats)
+  }
+
   const openingInfo = await resolveOpeningReading(input.flatId, input.month)
   let openingReading: number
 
@@ -197,7 +313,6 @@ export async function saveReading(
 
   const consumptionLiters = calculateConsumption(openingReading, input.closingReading)
   const now = new Date().toISOString()
-  const allReadings = await dataStore.getReadings()
   const existing = existingId ? allReadings.find((r) => r.id === existingId) : undefined
 
   const reading: MeterReading = {
@@ -237,11 +352,12 @@ export async function saveReading(
 
   await cacheInvalidate(CacheKeys.readings(input.month))
   await cacheInvalidate(`monthly-summaries:${input.month}`)
+  await cacheInvalidate(`month-rollover:${input.month}`)
+  await cacheInvalidate(`month-rollover:${getNextMonth(input.month)}`)
   await cacheInvalidate(CacheKeys.dashboard(input.month))
   await cacheInvalidate(CacheKeys.alerts(input.month))
   await cacheInvalidatePrefixAnalytics(input.flatId)
 
-  const flats = await getFlats()
   const flat = flats.find((f) => f.id === input.flatId)
   if (flat && monthlySummary) {
     const history = await getReadingHistory(input.flatId)
@@ -286,6 +402,8 @@ export async function deleteReading(
 
   await cacheInvalidate(CacheKeys.readings(reading.month))
   await cacheInvalidate(`monthly-summaries:${reading.month}`)
+  await cacheInvalidate(`month-rollover:${reading.month}`)
+  await cacheInvalidate(`month-rollover:${getNextMonth(reading.month)}`)
   await cacheInvalidate(CacheKeys.dashboard(reading.month))
   await cacheInvalidatePrefixAnalytics(reading.flatId)
 

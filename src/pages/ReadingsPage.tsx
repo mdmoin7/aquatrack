@@ -4,9 +4,11 @@ import DataTable from 'react-data-table-component'
 import { PageHeader } from '@/components/common/PageHeader'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { FlatReadingTimeline } from '@/components/readings/FlatReadingTimeline'
+import { MonthRolloverPanel } from '@/components/readings/MonthRolloverPanel'
 import { ReadingUploadPanel } from '@/components/readings/ReadingUploadPanel'
 import { useAppContext } from '@/context/AppContext'
 import { useAuth } from '@/context/AuthContext'
+import { canManageReadings } from '@/lib/roles'
 import {
   formatKL,
   formatMonthLabel,
@@ -16,6 +18,7 @@ import {
 import {
   deleteReading,
   getFlats,
+  getMonthRolloverStatus,
   getMonthlySummaries,
   getReadings,
   resolveOpeningReading,
@@ -23,13 +26,16 @@ import {
   type OpeningReadingInfo,
 } from '@/services/readingsService'
 import type { Flat, MeterReading, MonthlyFlatSummary } from '@/types'
+import type { MonthRolloverStatus } from '@/lib/monthRollover'
 
 export function ReadingsPage() {
   const { selectedMonth, refresh } = useAppContext()
   const { user } = useAuth()
+  const canEdit = canManageReadings(user?.role)
   const [readings, setReadings] = useState<MeterReading[]>([])
   const [summaries, setSummaries] = useState<MonthlyFlatSummary[]>([])
   const [flats, setFlats] = useState<Flat[]>([])
+  const [rolloverStatus, setRolloverStatus] = useState<MonthRolloverStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -51,14 +57,16 @@ export function ReadingsPage() {
 
   const load = async () => {
     setLoading(true)
-    const [r, s, f] = await Promise.all([
+    const [r, s, f, rollover] = await Promise.all([
       getReadings(selectedMonth),
       getMonthlySummaries(selectedMonth),
       getFlats(),
+      getMonthRolloverStatus(selectedMonth),
     ])
     setReadings(r)
     setSummaries(s)
     setFlats(f)
+    setRolloverStatus(rollover)
     setLoading(false)
   }
 
@@ -77,6 +85,7 @@ export function ReadingsPage() {
   const flatMap = Object.fromEntries(flats.map((f) => [f.id, f]))
   const summaryMap = Object.fromEntries(summaries.map((s) => [s.flatId, s]))
   const isFirstCycle = openingInfo?.source === 'none'
+  const isMissingPrior = openingInfo?.source === 'missing_prior'
   const isAdditionalEntry = openingInfo?.source === 'previous_entry'
 
   const openAddForm = () => {
@@ -202,7 +211,7 @@ export function ReadingsPage() {
     {
       name: 'Actions',
       cell: (row: MeterReading) =>
-        user?.role === 'admin' ? (
+        canEdit ? (
           <div className="flex gap-1">
             <button
               type="button"
@@ -220,6 +229,7 @@ export function ReadingsPage() {
             </button>
           </div>
         ) : null,
+      omit: !canEdit,
       ignoreRowClick: true,
     },
   ]
@@ -251,33 +261,50 @@ export function ReadingsPage() {
     <div>
       <PageHeader
         title="Meter Readings"
-        description={`Multiple entries per flat allowed for ${formatMonthLabel(selectedMonth)} — billing uses monthly totals only`}
+        description={
+          canEdit
+            ? `Multiple entries per flat allowed for ${formatMonthLabel(selectedMonth)} — billing uses monthly totals only`
+            : `View-only society readings for ${formatMonthLabel(selectedMonth)}`
+        }
         actions={
-          <>
-            <button
-              type="button"
-              onClick={() => {
-                setShowUpload(true)
-                setShowForm(false)
-              }}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            >
-              <Upload className="h-4 w-4" />
-              Upload CSV
-            </button>
-            <button
-              type="button"
-              onClick={openAddForm}
-              className="inline-flex items-center gap-2 rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-600"
-            >
-              <Plus className="h-4 w-4" />
-              Add Reading
-            </button>
-          </>
+          canEdit ? (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowUpload(true)
+                  setShowForm(false)
+                }}
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                <Upload className="h-4 w-4" />
+                Upload CSV
+              </button>
+              <button
+                type="button"
+                onClick={openAddForm}
+                className="inline-flex items-center gap-2 rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-600"
+              >
+                <Plus className="h-4 w-4" />
+                Add Reading
+              </button>
+            </>
+          ) : undefined
         }
       />
 
-      {showUpload && (
+      {rolloverStatus && (
+        <MonthRolloverPanel
+          status={rolloverStatus}
+          readOnly={!canEdit}
+          onRepaired={() => {
+            refresh()
+            void load()
+          }}
+        />
+      )}
+
+      {canEdit && showUpload && (
         <ReadingUploadPanel
           month={selectedMonth}
           flats={flats}
@@ -358,7 +385,7 @@ export function ReadingsPage() {
         </div>
       )}
 
-      {showForm && (
+      {canEdit && showForm && (
         <div className="mb-6 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200/80">
           <h3 className="mb-1 font-semibold text-slate-900">
             {editingId ? 'Edit Reading Entry' : 'Add Reading Entry'}
@@ -455,6 +482,17 @@ export function ReadingsPage() {
             </div>
           )}
 
+          {isMissingPrior && !editingId && openingInfo?.previousMonth && (
+            <div className="mt-4 flex items-start gap-2 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-800">
+              <Info className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>
+                Cannot add a reading: <strong>{formatMonthLabel(openingInfo.previousMonth)}</strong>{' '}
+                has no closing for this flat. Complete the prior month first — opening will carry
+                forward automatically.
+              </span>
+            </div>
+          )}
+
           {isFirstCycle && form.flatId && !editingId && (
             <div className="mt-4 flex items-start gap-2 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
               <Info className="mt-0.5 h-4 w-4 shrink-0" />
@@ -484,6 +522,7 @@ export function ReadingsPage() {
               disabled={
                 !form.flatId ||
                 !form.closingReading ||
+                isMissingPrior ||
                 ((!editingId && isFirstCycle && !form.initialOpeningReading) as boolean)
               }
               className="rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-600 disabled:opacity-50"

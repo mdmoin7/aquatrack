@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AppLayout } from '@/components/layout/AppLayout'
-import { AdminRoute, GuestRoute, ProtectedRoute } from '@/components/common/ProtectedRoute'
+import { AdminRoute, AnalyticsRoute, GuestRoute, ProtectedRoute, SocietyReadingsRoute, StaffRoute } from '@/components/common/ProtectedRoute'
 import { AppProvider } from '@/context/AppContext'
 import { AuthProvider } from '@/context/AuthContext'
 import { CacheProvider } from '@/context/CacheContext'
@@ -75,9 +75,9 @@ function AppRoutes() {
         <Route
           path="/readings"
           element={
-            <AdminRoute>
+            <SocietyReadingsRoute>
               <ReadingsPage />
-            </AdminRoute>
+            </SocietyReadingsRoute>
           }
         />
         <Route
@@ -128,9 +128,30 @@ function AppRoutes() {
             </AdminRoute>
           }
         />
-        <Route path="/analytics" element={<FlatAnalyticsPage />} />
-        <Route path="/alerts" element={<AlertsPage />} />
-        <Route path="/resident" element={<ResidentPage />} />
+        <Route
+          path="/analytics"
+          element={
+            <AnalyticsRoute>
+              <FlatAnalyticsPage />
+            </AnalyticsRoute>
+          }
+        />
+        <Route
+          path="/alerts"
+          element={
+            <StaffRoute>
+              <AlertsPage />
+            </StaffRoute>
+          }
+        />
+        <Route
+          path="/resident"
+          element={
+            <StaffRoute>
+              <ResidentPage />
+            </StaffRoute>
+          }
+        />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

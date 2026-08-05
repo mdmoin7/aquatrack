@@ -1,12 +1,12 @@
 import { Link } from 'react-router-dom'
-import { Droplets } from 'lucide-react'
+import { Droplets, Eye } from 'lucide-react'
 import { GoogleSignInButton } from '@/components/auth/GoogleSignInButton'
 import { useAuth } from '@/context/AuthContext'
 import { getAuthErrorMessage } from '@/lib/authErrors'
 import { useState } from 'react'
 
 export function LoginPage() {
-  const { signIn, isDemo, signInDemo } = useAuth()
+  const { signIn, isDemo, signInDemo, signInAsGuest } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -39,10 +39,22 @@ export function LoginPage() {
         </div>
 
         <div className="rounded-2xl bg-white p-8 shadow-xl shadow-slate-200/60 ring-1 ring-slate-200">
+          <button
+            type="button"
+            onClick={() => signInAsGuest()}
+            className="mb-6 flex w-full items-center justify-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3.5 text-sm font-semibold text-sky-800 hover:bg-sky-100"
+          >
+            <Eye className="h-4 w-4" />
+            Continue as Guest
+          </button>
+          <p className="mb-6 text-center text-xs text-slate-500">
+            No account needed — view readings & flat timelines only
+          </p>
+
           {isDemo ? (
             <div className="space-y-4">
               <p className="text-center text-sm text-slate-500">
-                Demo mode — choose a role to explore the platform
+                Demo mode — or sign in with a role
               </p>
               <button
                 type="button"
@@ -68,7 +80,7 @@ export function LoginPage() {
                   <div className="w-full border-t border-slate-200" />
                 </div>
                 <div className="relative flex justify-center text-xs uppercase">
-                  <span className="bg-white px-2 text-slate-400">or</span>
+                  <span className="bg-white px-2 text-slate-400">or sign in</span>
                 </div>
               </div>
 
@@ -107,7 +119,7 @@ export function LoginPage() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full rounded-xl bg-sky-500 px-4 py-3 text-sm font-semibold text-white hover:bg-sky-600 disabled:opacity-60"
+                  className="w-full rounded-xl bg-slate-800 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-900 disabled:opacity-60"
                 >
                   {loading ? 'Signing in...' : 'Sign in with email'}
                 </button>

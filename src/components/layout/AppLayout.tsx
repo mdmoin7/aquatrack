@@ -39,13 +39,23 @@ const residentNav = [
   { to: '/alerts', label: 'Alerts', icon: AlertTriangle },
 ]
 
+const guestNav = [
+  { to: '/readings', label: 'Readings', icon: Gauge },
+  { to: '/analytics', label: 'Flat Analytics', icon: BarChart3 },
+]
+
 export function AppLayout() {
   const { user, signOut } = useAuth()
   const { selectedMonth, setSelectedMonth } = useAppContext()
   const navigate = useNavigate()
   const months = getPreviousMonths(12)
 
-  const nav = user?.role === 'resident' ? residentNav : adminNav
+  const nav =
+    user?.role === 'guest'
+      ? guestNav
+      : user?.role === 'resident'
+        ? residentNav
+        : adminNav
 
   const handleSignOut = async () => {
     await signOut()
@@ -112,7 +122,9 @@ export function AppLayout() {
         <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 backdrop-blur">
           <div className="flex items-center justify-between px-6 py-4">
             <p className="text-sm text-slate-500">
-              Society water consumption & billing platform
+              {user?.role === 'guest'
+                ? 'View-only access to readings & consumption timelines'
+                : 'Society water consumption & billing platform'}
             </p>
             <div className="relative">
               <select

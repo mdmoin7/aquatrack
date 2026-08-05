@@ -9,7 +9,7 @@ import {
   validateUploadRows,
   type ValidatedUploadRow,
 } from '@/lib/readingUpload'
-import { bulkImportReadings, resolveOpeningReading } from '@/services/readingsService'
+import { bulkImportReadings, getMonthRolloverStatus, resolveOpeningReading } from '@/services/readingsService'
 import type { Flat } from '@/types'
 import type { UserRole } from '@/types'
 
@@ -59,12 +59,26 @@ export function ReadingUploadPanel({
       const parsed = parseReadingUploadCSV(text)
 
       openingCache.clear()
+      const rollover = await getMonthRolloverStatus(month)
+      const missingPriorIds = new Set(
+        rollover.flats.filter((f) => f.status === 'missing_prior').map((f) => f.flatId),
+      )
+
       for (const flat of flats) {
         const info = await resolveOpeningReading(flat.id, month)
         openingCache.set(flat.id, info.openingReading)
       }
 
-      const validated = validateUploadRows(parsed, flats, getResolvedOpening)
+      const validated = validateUploadRows(parsed, flats, getResolvedOpening).map((row) => {
+        if (row.flat && missingPriorIds.has(row.flat.id)) {
+          return {
+            ...row,
+            status: 'error' as const,
+            message: `Missing ${formatMonthLabel(rollover.previousMonth)} closing — complete prior month first`,
+          }
+        }
+        return row
+      })
       setRows(validated)
     } catch (e) {
       setRows([])
