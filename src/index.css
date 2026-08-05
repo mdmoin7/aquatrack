@@ -1,0 +1,37 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  font-family: var(--font-sans);
+  background: #f8fafc;
+  color: #0f172a;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* react-data-table-component overrides */
+.rdt_Table {
+  background: transparent !important;
+}
+
+.rdt_TableHeadRow {
+  background: #f8fafc !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+}
+
+.rdt_TableRow {
+  border-bottom: 1px solid #f1f5f9 !important;
+}
+
+.rdt_Pagination {
+  border-top: 1px solid #e2e8f0 !important;
+  background: #f8fafc !important;
+}

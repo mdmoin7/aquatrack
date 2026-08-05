@@ -1,0 +1,121 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function authEmail() {
+      return request.auth.token.email;
+    }
+
+    function isBootstrapSuperAdmin() {
+      return isSignedIn() && authEmail() == 'mohammad.nicoll@gmail.com';
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function hasProfile() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function isSuperAdmin() {
+      return hasProfile() && userDoc().role == 'superadmin';
+    }
+
+    function isAdmin() {
+      return hasProfile() && userDoc().role in ['admin', 'superadmin'];
+    }
+
+    function isResident() {
+      return hasProfile() && userDoc().role == 'resident';
+    }
+
+    function sameSociety(societyId) {
+      return hasProfile() && userDoc().societyId == societyId;
+    }
+
+    function residentFlatId() {
+      return userDoc().flatId;
+    }
+
+    function canAssignRole(role) {
+      return role != 'superadmin' || isSuperAdmin() || isBootstrapSuperAdmin();
+    }
+
+    // User profiles
+    match /users/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow create: if isSignedIn() && (
+        (request.auth.uid == userId &&
+          canAssignRole(request.resource.data.role)) ||
+        (isAdmin() &&
+          request.resource.data.societyId == userDoc().societyId &&
+          canAssignRole(request.resource.data.role))
+      );
+      allow update: if isSignedIn() && (
+        (request.auth.uid == userId &&
+          request.resource.data.role == resource.data.role) ||
+        (isAdmin() &&
+          resource.data.societyId == userDoc().societyId &&
+          (resource.data.role != 'superadmin' || isSuperAdmin()) &&
+          canAssignRole(request.resource.data.role))
+      );
+    }
+
+    // Society-scoped data
+    match /societies/{societyId} {
+
+      match /flats/{flatId} {
+        allow read: if sameSociety(societyId);
+        allow write: if sameSociety(societyId) && isAdmin();
+      }
+
+      match /readings/{readingId} {
+        allow read: if sameSociety(societyId) && (
+          isAdmin() ||
+          (isResident() && resource.data.flatId == residentFlatId())
+        );
+        allow create: if sameSociety(societyId) && (
+          isAdmin() ||
+          (isResident() && request.resource.data.flatId == residentFlatId())
+        );
+        allow update: if sameSociety(societyId) && (
+          isAdmin() ||
+          (isResident() &&
+            resource.data.flatId == residentFlatId() &&
+            request.resource.data.flatId == residentFlatId())
+        );
+        allow delete: if sameSociety(societyId) && isAdmin();
+      }
+
+      match /billingConfigs/{month} {
+        allow read: if sameSociety(societyId);
+        allow create, update: if sameSociety(societyId) && isAdmin();
+        allow delete: if sameSociety(societyId) && isAdmin();
+      }
+
+      match /alerts/{alertId} {
+        allow read: if sameSociety(societyId) && (
+          isAdmin() ||
+          (isResident() && resource.data.flatId == residentFlatId())
+        );
+        allow create, update: if sameSociety(societyId) && isAdmin();
+        allow delete: if sameSociety(societyId) && isAdmin();
+      }
+
+      match /tankerDeliveries/{deliveryId} {
+        allow read, write: if sameSociety(societyId) && isAdmin();
+      }
+
+      match /tankerVendors/{vendorId} {
+        allow read: if sameSociety(societyId);
+        allow write: if sameSociety(societyId) && isAdmin();
+      }
+    }
+  }
+}
