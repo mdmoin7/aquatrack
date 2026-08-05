@@ -3,6 +3,7 @@ import type {
   BillingConfig,
   Flat,
   MeterReading,
+  StoredFlatBill,
   TankerDelivery,
   TankerVendor,
   User,
@@ -14,6 +15,7 @@ interface AppData {
   flats: Flat[]
   readings: MeterReading[]
   billingConfigs: BillingConfig[]
+  flatBills: StoredFlatBill[]
   alerts: Alert[]
   users: User[]
   tankerDeliveries: TankerDelivery[]
@@ -24,6 +26,7 @@ const DEFAULT_DATA: AppData = {
   flats: [],
   readings: [],
   billingConfigs: [],
+  flatBills: [],
   alerts: [],
   users: [],
   tankerDeliveries: [],
@@ -87,6 +90,18 @@ export const localStore = {
     const idx = data.billingConfigs.findIndex((c) => c.month === config.month)
     if (idx >= 0) data.billingConfigs[idx] = config
     else data.billingConfigs.push(config)
+    save(data)
+  },
+
+  getFlatBills(month: string): StoredFlatBill[] {
+    const bills = load().flatBills ?? []
+    return bills.filter((b) => b.month === month)
+  },
+
+  saveFlatBills(month: string, bills: StoredFlatBill[]): void {
+    const data = load()
+    if (!data.flatBills) data.flatBills = []
+    data.flatBills = data.flatBills.filter((b) => b.month !== month).concat(bills)
     save(data)
   },
 
@@ -160,6 +175,7 @@ export const localStore = {
       flats: data.flats,
       readings: data.readings,
       billingConfigs: data.billingConfigs,
+      flatBills: data.flatBills ?? [],
       alerts: data.alerts ?? [],
       users: data.users,
       tankerDeliveries: data.tankerDeliveries ?? [],

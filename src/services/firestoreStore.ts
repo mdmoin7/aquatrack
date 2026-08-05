@@ -14,6 +14,7 @@ import type {
   BillingConfig,
   Flat,
   MeterReading,
+  StoredFlatBill,
   TankerDelivery,
   TankerVendor,
   User,
@@ -82,10 +83,12 @@ export const firestoreStore = {
   },
 
   async clearSocietyCollections(): Promise<void> {
-    const [flats, readings, billingConfigs, alerts, deliveries, vendors] = await Promise.all([
+    const [flats, readings, billingConfigs, flatBills, alerts, deliveries, vendors] =
+      await Promise.all([
       getDocs(collection(db(), Collections.flats())),
       getDocs(collection(db(), Collections.readings())),
       getDocs(collection(db(), Collections.billingConfigs())),
+      getDocs(collection(db(), Collections.flatBills())),
       getDocs(collection(db(), Collections.alerts())),
       getDocs(collection(db(), Collections.tankerDeliveries())),
       getDocs(collection(db(), Collections.tankerVendors())),
@@ -95,6 +98,7 @@ export const firestoreStore = {
       ...flats.docs.map((d) => deleteDoc(d.ref)),
       ...readings.docs.map((d) => deleteDoc(d.ref)),
       ...billingConfigs.docs.map((d) => deleteDoc(d.ref)),
+      ...flatBills.docs.map((d) => deleteDoc(d.ref)),
       ...alerts.docs.map((d) => deleteDoc(d.ref)),
       ...deliveries.docs.map((d) => deleteDoc(d.ref)),
       ...vendors.docs.map((d) => deleteDoc(d.ref)),
@@ -132,6 +136,24 @@ export const firestoreStore = {
   async upsertBillingConfig(config: BillingConfig): Promise<void> {
     const { id, month, ...data } = config
     await writeDoc(doc(db(), Collections.billingConfig(month)), { ...data, id, month })
+  },
+
+  async getFlatBills(month: string): Promise<StoredFlatBill[]> {
+    const snap = await getDocs(
+      query(collection(db(), Collections.flatBills()), where('month', '==', month)),
+    )
+    return snap.docs
+      .map((d) => ({ id: d.id, ...d.data() }) as StoredFlatBill)
+      .sort((a, b) => a.flat.label.localeCompare(b.flat.label))
+  },
+
+  async saveFlatBills(month: string, bills: StoredFlatBill[]): Promise<void> {
+    await Promise.all(
+      bills.map((bill) => {
+        const { id, ...data } = bill
+        return writeDoc(doc(db(), Collections.flatBill(month, bill.flatId)), { ...data, id }, false)
+      }),
+    )
   },
 
   async getAlerts(month?: string): Promise<Alert[]> {

@@ -23,6 +23,9 @@ export const Collections = {
   reading: (id: string) => `societies/${activeSocietyId}/readings/${id}`,
   billingConfigs: () => `societies/${activeSocietyId}/billingConfigs`,
   billingConfig: (month: string) => `societies/${activeSocietyId}/billingConfigs/${month}`,
+  flatBills: () => `societies/${activeSocietyId}/flatBills`,
+  flatBill: (month: string, flatId: string) =>
+    `societies/${activeSocietyId}/flatBills/${month}__${flatId}`,
   alerts: () => `societies/${activeSocietyId}/alerts`,
   alert: (id: string) => `societies/${activeSocietyId}/alerts/${id}`,
   tankerDeliveries: () => `societies/${activeSocietyId}/tankerDeliveries`,

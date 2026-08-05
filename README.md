@@ -79,10 +79,22 @@ Rules are in `firestore.rules` — they enforce:
 Deploy updated security rules before first use:
 
 ```bash
-firebase deploy --only firestore:rules
+npm run deploy:rules
 ```
 
-### 5. Add Resident Users
+### 6. Deploy to Firebase Hosting
+
+Build env vars must be set before `npm run build` (Vite bakes `VITE_*` into the bundle). For CI or one-shot deploy:
+
+```bash
+npm run deploy              # hosting + firestore rules/indexes (build runs via predeploy)
+npm run deploy:hosting      # hosting only
+npm run deploy:firestore    # rules + indexes only
+```
+
+After deploy, add your Hosting URL (e.g. `https://metered-billing-745dd.web.app`) to Firebase **Authentication → Authorized domains**.
+
+### 7. Add Resident Users
 
 1. Create the account in Firebase Console → Authentication, or have them **register** at `/register`
 2. As admin, go to **Users** in the sidebar
@@ -128,4 +140,7 @@ All services use `dataStore` which automatically routes to the correct backend.
 |---------|-------------|
 | `npm run dev` | Start dev server |
 | `npm run build` | Production build |
-| `firebase deploy --only firestore:rules` | Deploy security rules |
+| `npm run deploy` | Build + deploy hosting & Firestore |
+| `npm run deploy:hosting` | Deploy Hosting only |
+| `npm run deploy:rules` | Deploy Firestore security rules |
+| `firebase deploy --only firestore:rules` | Same as deploy:rules |

@@ -187,6 +187,7 @@ export async function cacheInspect(): Promise<CacheEntry[]> {
 export const CacheKeys = {
   readings: (month: string) => `readings:${month}`,
   billingConfig: (month: string) => `billing:${month}`,
+  flatBills: (month: string) => `flatBills:${month}`,
   dashboard: (month: string) => `dashboard:${month}`,
   flatAnalytics: (flatId: string, month: string) => `analytics:${flatId}:${month}`,
   alerts: (month: string) => `alerts:${month}`,

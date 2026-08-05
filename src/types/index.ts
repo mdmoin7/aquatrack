@@ -65,6 +65,8 @@ export interface BillingConfig {
   locked: boolean
   lockedAt?: string
   lockedBy?: string
+  billsGeneratedAt?: string
+  billsGeneratedBy?: string
 }
 
 export interface FlatBill {
@@ -82,6 +84,13 @@ export interface FlatBill {
   efficiencyScore: number
   lastUpdated: string
   enteredBy: string
+}
+
+/** Persisted snapshot of a flat bill at generation time. */
+export interface StoredFlatBill extends FlatBill {
+  id: string
+  generatedAt: string
+  generatedBy: string
 }
 
 export interface SocietyStats {

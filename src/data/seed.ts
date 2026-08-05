@@ -100,6 +100,7 @@ export async function ensureLocalSeed(): Promise<void> {
     flats: payload.flats,
     readings: payload.readings,
     billingConfigs: payload.billingConfigs,
+    flatBills: [],
     alerts: [],
     users: payload.users,
     tankerDeliveries: [],

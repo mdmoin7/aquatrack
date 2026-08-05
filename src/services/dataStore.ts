@@ -3,6 +3,7 @@ import type {
   BillingConfig,
   Flat,
   MeterReading,
+  StoredFlatBill,
   TankerDelivery,
   TankerVendor,
   User,
@@ -58,6 +59,15 @@ export const dataStore = {
   async upsertBillingConfig(config: BillingConfig): Promise<void> {
     if (isCloudBackend()) await firestoreStore.upsertBillingConfig(config)
     else localStore.upsertBillingConfig(config)
+  },
+
+  async getFlatBills(month: string): Promise<StoredFlatBill[]> {
+    return isCloudBackend() ? firestoreStore.getFlatBills(month) : localStore.getFlatBills(month)
+  },
+
+  async saveFlatBills(month: string, bills: StoredFlatBill[]): Promise<void> {
+    if (isCloudBackend()) await firestoreStore.saveFlatBills(month, bills)
+    else localStore.saveFlatBills(month, bills)
   },
 
   async getAlerts(month?: string): Promise<Alert[]> {

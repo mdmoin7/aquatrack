@@ -1,4 +1,5 @@
-import type { BillingConfig, FlatBill, SocietyStats } from '@/types'
+import type { BillingConfig, FlatBill, SocietyStats, StoredFlatBill } from '@/types'
+import { canGenerateFlatBills, type BillGenerationCheck } from '@/lib/billGeneration'
 import {
   calculateEffectiveRate,
   calculateEfficiencyScore,
@@ -7,9 +8,23 @@ import {
   getPreviousMonths,
 } from '@/lib/billing'
 import { cacheGet, cacheInvalidate, cacheSet, CacheKeys } from '@/lib/cache'
-import { dataStore } from '@/services/dataStore'
-import { getFlats, getMonthlySummaries, groupReadingsByBlock } from '@/services/readingsService'
 import { summaryToBillingReading } from '@/lib/readings'
+import { dataStore } from '@/services/dataStore'
+import { getFlats, getMonthlySummaries, getMonthRolloverStatus, groupReadingsByBlock } from '@/services/readingsService'
+
+function storedToFlatBill(stored: StoredFlatBill): FlatBill {
+  const { id: _id, generatedAt: _at, generatedBy: _by, ...bill } = stored
+  return bill
+}
+
+function toStoredFlatBill(bill: FlatBill, userId: string, generatedAt: string): StoredFlatBill {
+  return {
+    id: `${bill.month}__${bill.flatId}`,
+    ...bill,
+    generatedAt,
+    generatedBy: userId,
+  }
+}
 
 export async function getBillingConfig(month: string): Promise<BillingConfig | null> {
   const cached = await cacheGet<BillingConfig>(CacheKeys.billingConfig(month))
@@ -20,7 +35,7 @@ export async function getBillingConfig(month: string): Promise<BillingConfig | n
 }
 
 export async function saveBillingConfig(
-  config: Omit<BillingConfig, 'id' | 'locked' | 'lockedAt' | 'lockedBy'>,
+  config: Omit<BillingConfig, 'id' | 'locked' | 'lockedAt' | 'lockedBy' | 'billsGeneratedAt' | 'billsGeneratedBy'>,
 ): Promise<BillingConfig> {
   const existing = await dataStore.getBillingConfig(config.month)
   if (existing?.locked) {
@@ -33,6 +48,8 @@ export async function saveBillingConfig(
     locked: existing?.locked ?? false,
     ...(existing?.lockedAt ? { lockedAt: existing.lockedAt } : {}),
     ...(existing?.lockedBy ? { lockedBy: existing.lockedBy } : {}),
+    ...(existing?.billsGeneratedAt ? { billsGeneratedAt: existing.billsGeneratedAt } : {}),
+    ...(existing?.billsGeneratedBy ? { billsGeneratedBy: existing.billsGeneratedBy } : {}),
   }
 
   await dataStore.upsertBillingConfig(saved)
@@ -56,6 +73,14 @@ export async function lockBillingMonth(month: string, userId: string): Promise<B
   await dataStore.upsertBillingConfig(locked)
   await cacheInvalidate(CacheKeys.billingConfig(month))
   return locked
+}
+
+export async function validateBillGeneration(month: string): Promise<BillGenerationCheck> {
+  const [rollover, config] = await Promise.all([
+    getMonthRolloverStatus(month),
+    getBillingConfig(month),
+  ])
+  return canGenerateFlatBills(rollover, config)
 }
 
 export async function computeFlatBills(month: string): Promise<FlatBill[]> {
@@ -97,6 +122,62 @@ export async function computeFlatBills(month: string): Promise<FlatBill[]> {
     .sort((a, b) => a.flat.label.localeCompare(b.flat.label))
 }
 
+export async function getFlatBills(month: string): Promise<FlatBill[]> {
+  const config = await getBillingConfig(month)
+  if (config?.locked) {
+    const cached = await cacheGet<FlatBill[]>(CacheKeys.flatBills(month))
+    if (cached) return cached
+
+    const stored = await dataStore.getFlatBills(month)
+    if (stored.length > 0) {
+      const bills = stored.map(storedToFlatBill)
+      await cacheSet(CacheKeys.flatBills(month), bills)
+      return bills
+    }
+  }
+
+  return computeFlatBills(month)
+}
+
+export async function generateAndLockFlatBills(
+  month: string,
+  userId: string,
+): Promise<{ bills: FlatBill[]; config: BillingConfig }> {
+  const validation = await validateBillGeneration(month)
+  if (!validation.ok) {
+    throw new Error(validation.errors.join(' '))
+  }
+
+  const bills = await computeFlatBills(month)
+  if (bills.length === 0) {
+    throw new Error('No bills to generate. Ensure flats have readings for this month.')
+  }
+
+  const generatedAt = new Date().toISOString()
+  const stored = bills.map((bill) => toStoredFlatBill(bill, userId, generatedAt))
+  await dataStore.saveFlatBills(month, stored)
+
+  const existing = await dataStore.getBillingConfig(month)
+  if (!existing) throw new Error('Billing configuration not found for this month.')
+
+  const locked: BillingConfig = {
+    ...existing,
+    locked: true,
+    lockedAt: generatedAt,
+    lockedBy: userId,
+    billsGeneratedAt: generatedAt,
+    billsGeneratedBy: userId,
+  }
+
+  await dataStore.upsertBillingConfig(locked)
+  await cacheInvalidate(CacheKeys.billingConfig(month))
+  await cacheInvalidate(CacheKeys.flatBills(month))
+  await cacheInvalidate(CacheKeys.dashboard(month))
+  await cacheSet(CacheKeys.flatBills(month), bills)
+
+  return { bills, config: locked }
+}
+
 export async function getSocietyStats(month: string): Promise<SocietyStats> {
   const cached = await cacheGet<SocietyStats>(CacheKeys.dashboard(month))
   if (cached) return cached
@@ -105,7 +186,7 @@ export async function getSocietyStats(month: string): Promise<SocietyStats> {
     getFlats(),
     getMonthlySummaries(month),
     getBillingConfig(month),
-    computeFlatBills(month),
+    getFlatBills(month),
   ])
 
   const totalConsumptionKL = summaries.reduce((sum, s) => sum + s.consumptionKL, 0)
@@ -146,7 +227,7 @@ export async function getFlatBillHistory(flatId: string): Promise<FlatBill[]> {
   const months = getPreviousMonths(12)
   const results: FlatBill[] = []
   for (const month of months) {
-    const bills = await computeFlatBills(month)
+    const bills = await getFlatBills(month)
     const bill = bills.find((b) => b.flatId === flatId)
     if (bill) results.push(bill)
   }

@@ -35,3 +35,13 @@ body {
   border-top: 1px solid #e2e8f0 !important;
   background: #f8fafc !important;
 }
+
+.rdt_TableWrapper,
+.rdt_Table {
+  min-width: 0;
+}
+
+.rdt_TableWrapper {
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch;
+}

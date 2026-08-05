@@ -4,7 +4,7 @@ import { DEFAULT_TANKER_CAPACITY_LITERS } from '@/lib/tanker'
 import { detectSpike, forecastNextMonth, generateAlertsForReading } from '@/lib/analytics'
 import { cacheGet, cacheSet, CacheKeys } from '@/lib/cache'
 import { dataStore } from '@/services/dataStore'
-import { computeFlatBills, getBillingConfig, getSocietyStats } from '@/services/billingService'
+import { getFlatBills, getBillingConfig, getSocietyStats } from '@/services/billingService'
 import { getFlats, getReadingHistory } from '@/services/readingsService'
 
 export async function getFlatAnalytics(
@@ -23,7 +23,7 @@ export async function getFlatAnalytics(
     getReadingHistory(flatId),
     getSocietyStats(month),
     getBillingConfig(month),
-    computeFlatBills(month),
+    getFlatBills(month),
   ])
 
   const currentBill = bills.find((b) => b.flatId === flatId)
@@ -42,7 +42,7 @@ export async function getFlatAnalytics(
 
   const timeline = await Promise.all(
     history.slice(-12).map(async (r) => {
-      const monthBills = await computeFlatBills(r.month)
+      const monthBills = await getFlatBills(r.month)
       const bill = monthBills.find((b) => b.flatId === flatId)
       return {
         month: r.month,

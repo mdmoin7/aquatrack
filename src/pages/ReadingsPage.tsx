@@ -16,6 +16,11 @@ import {
   calculateConsumption,
 } from '@/lib/billing'
 import {
+  litersToMeterDisplay,
+  meterDisplayToLiters,
+  parseMeterDisplayInput,
+} from '@/lib/meterReading'
+import {
   deleteReading,
   getFlats,
   getMonthRolloverStatus,
@@ -102,8 +107,8 @@ export function ReadingsPage() {
     setShowForm(true)
     setForm({
       flatId: reading.flatId,
-      closingReading: String(reading.closingReading),
-      initialOpeningReading: String(reading.openingReading),
+      closingReading: String(litersToMeterDisplay(reading.closingReading)),
+      initialOpeningReading: String(litersToMeterDisplay(reading.openingReading)),
     })
     setOpeningInfo({
       openingReading: reading.openingReading,
@@ -124,27 +129,46 @@ export function ReadingsPage() {
 
   const handleSave = async () => {
     setError('')
+    const closingDisplay = parseMeterDisplayInput(form.closingReading)
+    if (closingDisplay === null) {
+      setError('Enter a valid closing meter reading.')
+      return
+    }
+
     try {
       if (editingId) {
+        const openingDisplay = parseMeterDisplayInput(form.initialOpeningReading)
+        if (openingDisplay === null) {
+          setError('Enter a valid opening meter reading.')
+          return
+        }
         await saveReading(
           {
             flatId: form.flatId,
             month: selectedMonth,
-            closingReading: Number(form.closingReading),
-            initialOpeningReading: Number(form.initialOpeningReading),
+            closingReading: meterDisplayToLiters(closingDisplay),
+            initialOpeningReading: meterDisplayToLiters(openingDisplay),
             enteredBy: user?.displayName ?? 'Unknown',
             enteredByRole: user?.role ?? 'guest',
           },
           editingId,
         )
       } else {
+        const initialOpeningDisplay = isFirstCycle
+          ? parseMeterDisplayInput(form.initialOpeningReading)
+          : null
+        if (isFirstCycle && initialOpeningDisplay === null) {
+          setError('Enter a valid initial meter reading.')
+          return
+        }
         await saveReading({
           flatId: form.flatId,
           month: selectedMonth,
-          closingReading: Number(form.closingReading),
-          initialOpeningReading: isFirstCycle
-            ? Number(form.initialOpeningReading)
-            : undefined,
+          closingReading: meterDisplayToLiters(closingDisplay),
+          initialOpeningReading:
+            initialOpeningDisplay !== null
+              ? meterDisplayToLiters(initialOpeningDisplay)
+              : undefined,
           enteredBy: user?.displayName ?? 'Unknown',
           enteredByRole: user?.role ?? 'guest',
         })
@@ -234,23 +258,27 @@ export function ReadingsPage() {
     },
   ]
 
-  const resolvedOpening = editingId
-    ? Number(form.initialOpeningReading) || null
-    : isFirstCycle
-      ? Number(form.initialOpeningReading) || null
-      : openingInfo?.openingReading ?? null
+  const resolvedOpeningLiters = (() => {
+    if (editingId || isFirstCycle) {
+      const display = parseMeterDisplayInput(form.initialOpeningReading)
+      return display !== null ? meterDisplayToLiters(display) : null
+    }
+    return openingInfo?.openingReading ?? null
+  })()
+
+  const closingLiters = parseMeterDisplayInput(form.closingReading)
 
   const entryConsumption =
-    resolvedOpening !== null && form.closingReading
-      ? litersToKL(calculateConsumption(resolvedOpening, Number(form.closingReading)))
+    resolvedOpeningLiters !== null && closingLiters !== null
+      ? litersToKL(calculateConsumption(resolvedOpeningLiters, meterDisplayToLiters(closingLiters)))
       : null
 
   const projectedMonthlyKL =
-    resolvedOpening !== null && form.closingReading && form.flatId
+    resolvedOpeningLiters !== null && closingLiters !== null && form.flatId
       ? litersToKL(
           calculateConsumption(
-            summaryMap[form.flatId]?.openingReading ?? resolvedOpening,
-            Number(form.closingReading),
+            summaryMap[form.flatId]?.openingReading ?? resolvedOpeningLiters,
+            meterDisplayToLiters(closingLiters),
           ),
         )
       : entryConsumption
@@ -393,7 +421,7 @@ export function ReadingsPage() {
           <p className="mb-4 text-sm text-slate-500">
             {editingId
               ? 'Update this individual entry. Monthly billing will be recalculated.'
-              : 'Add a new reading entry. Multiple entries per flat are allowed each month.'}
+              : 'Enter the value shown on the physical meter dial (e.g. 12872 = 128,720 L). CSV uploads use liters directly.'}
           </p>
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -416,7 +444,7 @@ export function ReadingsPage() {
 
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                Opening Reading (L)
+                Opening Reading (meter)
                 {!editingId && !isFirstCycle && (
                   <span className="ml-1 font-normal text-slate-400">
                     {isAdditionalEntry ? '— from last entry' : '— from previous month'}
@@ -426,13 +454,15 @@ export function ReadingsPage() {
               <input
                 type="number"
                 readOnly={!editingId && !isFirstCycle}
-                placeholder={isFirstCycle ? 'Initial meter reading' : 'Auto-filled'}
+                placeholder={isFirstCycle ? 'Dial reading' : 'Auto-filled'}
                 value={
                   editingId
                     ? form.initialOpeningReading
                     : isFirstCycle
                       ? form.initialOpeningReading
-                      : openingInfo?.openingReading?.toString() ?? ''
+                      : openingInfo?.openingReading != null
+                        ? String(litersToMeterDisplay(openingInfo.openingReading))
+                        : ''
                 }
                 onChange={(e) =>
                   setForm({ ...form, initialOpeningReading: e.target.value })
@@ -447,11 +477,11 @@ export function ReadingsPage() {
 
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                Closing Reading (L)
+                Closing Reading (meter)
               </label>
               <input
                 type="number"
-                placeholder="Meter reading"
+                placeholder="Dial reading"
                 value={form.closingReading}
                 onChange={(e) => setForm({ ...form, closingReading: e.target.value })}
                 className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm"
@@ -464,8 +494,11 @@ export function ReadingsPage() {
               <Info className="mt-0.5 h-4 w-4 shrink-0" />
               <span>
                 Entry #{openingInfo.entryNumber}: opening of{' '}
-                <strong>{openingInfo.openingReading?.toLocaleString()} L</strong> from{' '}
-                {formatMonthLabel(openingInfo.previousMonth)} closing.
+                <strong>
+                  {openingInfo.openingReading?.toLocaleString()} L (
+                  {litersToMeterDisplay(openingInfo.openingReading ?? 0).toLocaleString()} on dial)
+                </strong>{' '}
+                from {formatMonthLabel(openingInfo.previousMonth)} closing.
               </span>
             </div>
           )}
@@ -475,7 +508,11 @@ export function ReadingsPage() {
               <Info className="mt-0.5 h-4 w-4 shrink-0" />
               <span>
                 Entry #{openingInfo?.entryNumber}: opening of{' '}
-                <strong>{openingInfo?.openingReading?.toLocaleString()} L</strong> from the previous
+                <strong>
+                  {openingInfo?.openingReading?.toLocaleString()} L (
+                  {litersToMeterDisplay(openingInfo?.openingReading ?? 0).toLocaleString()} on dial)
+                </strong>{' '}
+                from the previous
                 entry this month. Current monthly total:{' '}
                 <strong>{formatKL(openingInfo?.monthlyConsumptionKL ?? 0)}</strong>.
               </span>
@@ -497,8 +534,8 @@ export function ReadingsPage() {
             <div className="mt-4 flex items-start gap-2 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
               <Info className="mt-0.5 h-4 w-4 shrink-0" />
               <span>
-                First reading for this flat — enter the initial meter reading. Additional entries can
-                be added anytime during the month.
+                First reading for this flat — enter the dial reading shown on the meter (stored as
+                liters × 10). Additional entries can be added anytime during the month.
               </span>
             </div>
           )}

@@ -1,47 +1,70 @@
 import { useEffect, useState } from 'react'
-import { Download, FileText, Lock } from 'lucide-react'
+import { Download, FileText } from 'lucide-react'
 import DataTable from 'react-data-table-component'
+import { BillGenerationPanel } from '@/components/billing/BillGenerationPanel'
 import { PageHeader } from '@/components/common/PageHeader'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { useAppContext } from '@/context/AppContext'
 import { formatCurrency, formatKL, formatMonthLabel } from '@/lib/billing'
 import { buildInvoiceRows, exportBillsCSV, exportBillsPDF, exportInvoiceSheet } from '@/lib/reports'
-import { computeFlatBills, getBillingConfig, getSocietyStats, lockBillingMonth } from '@/services/billingService'
+import {
+  generateAndLockFlatBills,
+  getBillingConfig,
+  getFlatBills,
+  getSocietyStats,
+  validateBillGeneration,
+} from '@/services/billingService'
 import { useAuth } from '@/context/AuthContext'
-import type { FlatBill } from '@/types'
+import type { BillingConfig, FlatBill } from '@/types'
 
 export function AdministrationPage() {
   const { selectedMonth, refresh, refreshKey } = useAppContext()
   const { user } = useAuth()
   const [bills, setBills] = useState<FlatBill[]>([])
+  const [config, setConfig] = useState<BillingConfig | null>(null)
+  const [validation, setValidation] = useState({ ok: false, errors: [] as string[] })
   const [loading, setLoading] = useState(true)
-  const [locked, setLocked] = useState(false)
+  const [generating, setGenerating] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    void Promise.all([computeFlatBills(selectedMonth), getBillingConfig(selectedMonth)]).then(
-      ([b, config]) => {
-        if (!cancelled) {
-          setBills(b)
-          setLocked(config?.locked ?? false)
-          setLoading(false)
-        }
-      },
-    )
+    void Promise.all([
+      getFlatBills(selectedMonth),
+      getBillingConfig(selectedMonth),
+      validateBillGeneration(selectedMonth),
+    ]).then(([b, billingConfig, check]) => {
+      if (!cancelled) {
+        setBills(b)
+        setConfig(billingConfig)
+        setValidation(check)
+        setLoading(false)
+      }
+    })
     return () => {
       cancelled = true
     }
   }, [selectedMonth, refreshKey])
 
-  const handleLock = async () => {
-    if (!confirm('Lock bills for this month? They will become immutable.')) return
+  const handleGenerateAndLock = async () => {
+    if (
+      !confirm(
+        'Generate flat bills and lock this month? Bills will be saved as a snapshot and readings will become immutable.',
+      )
+    ) {
+      return
+    }
+    setGenerating(true)
     try {
-      await lockBillingMonth(selectedMonth, user?.id ?? 'admin')
-      setLocked(true)
+      const result = await generateAndLockFlatBills(selectedMonth, user?.id ?? 'admin')
+      setBills(result.bills)
+      setConfig(result.config)
+      setValidation({ ok: false, errors: ['This month is already locked.'] })
       refresh()
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Lock failed')
+      alert(e instanceof Error ? e.message : 'Generate & lock failed')
+    } finally {
+      setGenerating(false)
     }
   }
 
@@ -72,6 +95,8 @@ export function AdministrationPage() {
     { name: 'Entered By', selector: (row: FlatBill) => row.enteredBy },
   ]
 
+  const totalAmount = bills.reduce((sum, bill) => sum + bill.finalBill, 0)
+
   if (loading) return <LoadingSpinner />
 
   return (
@@ -81,25 +106,11 @@ export function AdministrationPage() {
         description={`Billing administration for ${formatMonthLabel(selectedMonth)}`}
         actions={
           <>
-            {locked && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700 ring-1 ring-amber-200">
-                <Lock className="h-3 w-3" /> Locked
-              </span>
-            )}
-            {!locked && (
-              <button
-                type="button"
-                onClick={() => void handleLock()}
-                className="inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100"
-              >
-                <Lock className="h-4 w-4" />
-                Lock Month
-              </button>
-            )}
             <button
               type="button"
               onClick={handleExportCSV}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              disabled={bills.length === 0}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
             >
               <Download className="h-4 w-4" />
               CSV
@@ -107,7 +118,8 @@ export function AdministrationPage() {
             <button
               type="button"
               onClick={() => void handleExportPDF()}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              disabled={bills.length === 0}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
             >
               <FileText className="h-4 w-4" />
               PDF
@@ -115,12 +127,23 @@ export function AdministrationPage() {
             <button
               type="button"
               onClick={handleExportInvoice}
-              className="inline-flex items-center gap-2 rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-600"
+              disabled={bills.length === 0}
+              className="inline-flex items-center gap-2 rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-600 disabled:opacity-50"
             >
               Invoice Sheet
             </button>
           </>
         }
+      />
+
+      <BillGenerationPanel
+        month={selectedMonth}
+        validation={validation}
+        config={config}
+        billCount={bills.length}
+        totalAmount={totalAmount}
+        generating={generating}
+        onGenerate={() => void handleGenerateAndLock()}
       />
 
       <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200/80">

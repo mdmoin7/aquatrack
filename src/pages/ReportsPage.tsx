@@ -10,7 +10,7 @@ import {
   exportBillsPDF,
   exportInvoiceSheet,
 } from '@/lib/reports'
-import { computeFlatBills, getSocietyStats } from '@/services/billingService'
+import { getFlatBills, getSocietyStats } from '@/services/billingService'
 import type { FlatBill } from '@/types'
 
 export function ReportsPage() {
@@ -21,7 +21,7 @@ export function ReportsPage() {
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    void computeFlatBills(selectedMonth).then((b) => {
+    void getFlatBills(selectedMonth).then((b) => {
       if (!cancelled) {
         setBills(b)
         setLoading(false)

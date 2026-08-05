@@ -107,6 +107,12 @@ service cloud.firestore {
         allow delete: if sameSociety(societyId) && isAdmin();
       }
 
+      match /flatBills/{billId} {
+        allow read: if sameSociety(societyId);
+        allow create, update: if sameSociety(societyId) && isAdmin();
+        allow delete: if sameSociety(societyId) && isAdmin();
+      }
+
       match /alerts/{alertId} {
         allow read: if sameSociety(societyId) && (
           isAdmin() ||
