@@ -186,6 +186,10 @@ export const firestoreStore = {
     await writeDoc(doc(db(), Collections.tankerVendor(id)), { ...data, id })
   },
 
+  async deleteTankerVendor(id: string): Promise<void> {
+    await deleteDoc(doc(db(), Collections.tankerVendor(id)))
+  },
+
   async getUsers(societyId?: string): Promise<User[]> {
     const sid = societyId ?? import.meta.env.VITE_SOCIETY_ID ?? 'default'
     const snap = await getDocs(

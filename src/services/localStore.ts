@@ -149,6 +149,12 @@ export const localStore = {
     save(data)
   },
 
+  deleteTankerVendor(id: string): void {
+    const data = load()
+    data.tankerVendors = (data.tankerVendors ?? []).filter((v) => v.id !== id)
+    save(data)
+  },
+
   replaceAll(data: AppData): void {
     save({
       flats: data.flats,

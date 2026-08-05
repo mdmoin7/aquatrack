@@ -99,6 +99,11 @@ export const dataStore = {
     else localStore.upsertTankerVendor(vendor)
   },
 
+  async deleteTankerVendor(id: string): Promise<void> {
+    if (isCloudBackend()) await firestoreStore.deleteTankerVendor(id)
+    else localStore.deleteTankerVendor(id)
+  },
+
   async getUsers(): Promise<User[]> {
     return isCloudBackend() ? firestoreStore.getUsers() : localStore.getUsers()
   },

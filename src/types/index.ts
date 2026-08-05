@@ -192,6 +192,8 @@ export interface TankerDelivery {
   totalLiters: number
   totalCost: number
   invoiceNumber?: string
+  /** Compressed JPEG as a data URL — embedded in Firestore, no Storage needed. */
+  vehicleSnapshotUrl?: string
   status: TankerOrderStatus
   notes?: string
   orderedBy: string

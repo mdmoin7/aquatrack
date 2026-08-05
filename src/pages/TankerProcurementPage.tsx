@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link2, Plus, RefreshCw, Trash2, Truck } from 'lucide-react'
+import { Link2, Pencil, Plus, RefreshCw, Trash2, Truck, UserPlus, X } from 'lucide-react'
 import DataTable from 'react-data-table-component'
 import {
   Bar,
@@ -13,6 +13,7 @@ import {
 import { PageHeader } from '@/components/common/PageHeader'
 import { StatCard } from '@/components/common/StatCard'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
+import { VehicleSnapshotField } from '@/components/procurement/VehicleSnapshotField'
 import { useAppContext } from '@/context/AppContext'
 import { useAuth } from '@/context/AuthContext'
 import { formatCurrency, formatKL, formatMonthLabel } from '@/lib/billing'
@@ -22,8 +23,14 @@ import {
   getDeliveries,
   getProcurementSummary,
   getVendors,
+  deleteVendor,
+  countVendorDeliveries,
   saveDelivery,
+  saveVendor,
   syncProcurementToBilling,
+  updatePendingDelivery,
+  canUpdateDelivery,
+  getAllowedStatusUpdates,
 } from '@/services/tankerService'
 import type { TankerDelivery, TankerOrderStatus, TankerProcurementSummary, TankerVendor } from '@/types'
 import { TANKER_STATUS_LABELS } from '@/types'
@@ -44,6 +51,7 @@ export function TankerProcurementPage() {
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [showForm, setShowForm] = useState(false)
+  const [vendorMode, setVendorMode] = useState<'existing' | 'new'>('existing')
   const [error, setError] = useState('')
   const [form, setForm] = useState({
     vendorId: '',
@@ -55,6 +63,93 @@ export function TankerProcurementPage() {
     status: 'delivered' as TankerOrderStatus,
     notes: '',
   })
+  const [newVendor, setNewVendor] = useState({
+    name: '',
+    contactPerson: '',
+    phone: '',
+  })
+  const [vehicleSnapshot, setVehicleSnapshot] = useState<File | null>(null)
+  const [vehicleSnapshotPreview, setVehicleSnapshotPreview] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [updatingDelivery, setUpdatingDelivery] = useState<TankerDelivery | null>(null)
+  const [updateForm, setUpdateForm] = useState({
+    tankerCount: 1,
+    status: 'ordered' as TankerOrderStatus,
+    deliveryDate: '',
+    invoiceNumber: '',
+    notes: '',
+  })
+  const [updateVehicleSnapshot, setUpdateVehicleSnapshot] = useState<File | null>(null)
+  const [updateVehicleSnapshotPreview, setUpdateVehicleSnapshotPreview] = useState<string | null>(null)
+  const [updateError, setUpdateError] = useState('')
+  const [updating, setUpdating] = useState(false)
+
+  const clearUpdateVehicleSnapshot = () => {
+    if (updateVehicleSnapshotPreview?.startsWith('blob:')) {
+      URL.revokeObjectURL(updateVehicleSnapshotPreview)
+    }
+    setUpdateVehicleSnapshot(null)
+    setUpdateVehicleSnapshotPreview(null)
+  }
+
+  const openUpdateDelivery = (delivery: TankerDelivery) => {
+    setShowForm(false)
+    setUpdateError('')
+    clearUpdateVehicleSnapshot()
+    setUpdatingDelivery(delivery)
+    setUpdateForm({
+      tankerCount: delivery.tankerCount,
+      status: delivery.status,
+      deliveryDate: delivery.deliveryDate,
+      invoiceNumber: delivery.invoiceNumber ?? '',
+      notes: delivery.notes ?? '',
+    })
+  }
+
+  const closeUpdateDelivery = () => {
+    clearUpdateVehicleSnapshot()
+    setUpdatingDelivery(null)
+    setUpdateError('')
+  }
+
+  const handleUpdateDelivery = async () => {
+    if (!updatingDelivery) return
+    setUpdateError('')
+    setUpdating(true)
+    try {
+      await updatePendingDelivery(
+        updatingDelivery.id,
+        {
+          tankerCount: updateForm.tankerCount,
+          status: updateForm.status,
+          deliveryDate: updateForm.deliveryDate,
+          invoiceNumber: updateForm.invoiceNumber || undefined,
+          notes: updateForm.notes || undefined,
+        },
+        { vehicleSnapshot: updateVehicleSnapshot },
+      )
+      closeUpdateDelivery()
+      refresh()
+      await load()
+    } catch (e) {
+      setUpdateError(e instanceof Error ? e.message : 'Failed to update delivery')
+    } finally {
+      setUpdating(false)
+    }
+  }
+
+  const openDeliveryForm = () => {
+    closeUpdateDelivery()
+    setError('')
+    setVendorMode(vendors.length > 0 ? 'existing' : 'new')
+    setNewVendor({ name: '', contactPerson: '', phone: '' })
+    if (vehicleSnapshotPreview?.startsWith('blob:')) {
+      URL.revokeObjectURL(vehicleSnapshotPreview)
+    }
+    setVehicleSnapshot(null)
+    setVehicleSnapshotPreview(null)
+    setShowForm(true)
+  }
 
   const load = async () => {
     setLoading(true)
@@ -93,30 +188,53 @@ export function TankerProcurementPage() {
 
   const handleSave = async () => {
     setError('')
-    const vendor = vendors.find((v) => v.id === form.vendorId)
-    if (!vendor) {
-      setError('Select a vendor')
-      return
-    }
+    setSaving(true)
     try {
-      await saveDelivery({
-        month: selectedMonth,
-        deliveryDate: form.deliveryDate,
-        vendorId: vendor.id,
-        vendorName: vendor.name,
-        tankerCount: form.tankerCount,
-        capacityLiters: form.capacityLiters,
-        costPerTanker: form.costPerTanker,
-        invoiceNumber: form.invoiceNumber || undefined,
-        status: form.status,
-        notes: form.notes || undefined,
-        orderedBy: user?.displayName ?? 'Admin',
-      })
+      let vendor: TankerVendor | undefined = vendors.find((v) => v.id === form.vendorId)
+
+      if (vendorMode === 'new') {
+        vendor = await saveVendor({
+          name: newVendor.name,
+          contactPerson: newVendor.contactPerson || undefined,
+          phone: newVendor.phone || undefined,
+          defaultCapacityLiters: form.capacityLiters,
+          defaultCostPerTanker: form.costPerTanker,
+        })
+      }
+
+      if (!vendor) {
+        setError(vendorMode === 'new' ? 'Enter a vendor name' : 'Select a vendor')
+        return
+      }
+
+      await saveDelivery(
+        {
+          month: selectedMonth,
+          deliveryDate: form.deliveryDate,
+          vendorId: vendor.id,
+          vendorName: vendor.name,
+          tankerCount: form.tankerCount,
+          capacityLiters: form.capacityLiters,
+          costPerTanker: form.costPerTanker,
+          invoiceNumber: form.invoiceNumber || undefined,
+          status: form.status,
+          notes: form.notes || undefined,
+          orderedBy: user?.displayName ?? 'Admin',
+        },
+        { vehicleSnapshot },
+      )
+      if (vehicleSnapshotPreview?.startsWith('blob:')) {
+        URL.revokeObjectURL(vehicleSnapshotPreview)
+      }
+      setVehicleSnapshot(null)
+      setVehicleSnapshotPreview(null)
       setShowForm(false)
       refresh()
       await load()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save delivery')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -128,6 +246,27 @@ export function TankerProcurementPage() {
       await load()
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Delete failed')
+    }
+  }
+
+  const handleDeleteVendor = async (vendor: TankerVendor) => {
+    const deliveryCount = await countVendorDeliveries(vendor.id)
+    const message =
+      deliveryCount > 0
+        ? `Delete ${vendor.name}? ${deliveryCount} delivery record(s) reference this vendor — they will keep the vendor name.`
+        : `Delete vendor ${vendor.name}?`
+
+    if (!confirm(message)) return
+
+    try {
+      await deleteVendor(vendor.id)
+      if (form.vendorId === vendor.id) {
+        setForm((f) => ({ ...f, vendorId: '' }))
+      }
+      refresh()
+      await load()
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Failed to delete vendor')
     }
   }
 
@@ -185,15 +324,51 @@ export function TankerProcurementPage() {
     },
     { name: 'Invoice', selector: (row: TankerDelivery) => row.invoiceNumber ?? '—' },
     {
+      name: 'Vehicle',
+      cell: (row: TankerDelivery) =>
+        row.vehicleSnapshotUrl ? (
+          <a
+            href={row.vehicleSnapshotUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block"
+            title="View vehicle snapshot"
+          >
+            <img
+              src={row.vehicleSnapshotUrl}
+              alt="Vehicle snapshot"
+              className="h-10 w-14 rounded-lg border border-slate-200 object-cover"
+            />
+          </a>
+        ) : (
+          <span className="text-slate-300">—</span>
+        ),
+      width: '90px',
+      ignoreRowClick: true,
+    },
+    {
       name: 'Actions',
       cell: (row: TankerDelivery) => (
-        <button
-          type="button"
-          onClick={() => void handleDelete(row.id)}
-          className="rounded-lg p-2 text-rose-500 hover:bg-rose-50"
-        >
-          <Trash2 className="h-4 w-4" />
-        </button>
+        <div className="flex gap-1">
+          {canUpdateDelivery(row) && (
+            <button
+              type="button"
+              onClick={() => openUpdateDelivery(row)}
+              className="rounded-lg p-2 text-sky-500 hover:bg-sky-50"
+              title="Update status or tanker count"
+            >
+              <Pencil className="h-4 w-4" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => void handleDelete(row.id)}
+            className="rounded-lg p-2 text-rose-500 hover:bg-rose-50"
+            title="Delete delivery"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
       ),
       ignoreRowClick: true,
     },
@@ -219,7 +394,7 @@ export function TankerProcurementPage() {
             </button>
             <button
               type="button"
-              onClick={() => setShowForm(true)}
+              onClick={openDeliveryForm}
               className="inline-flex items-center gap-2 rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-600"
             >
               <Plus className="h-4 w-4" />
@@ -319,23 +494,139 @@ export function TankerProcurementPage() {
         </div>
       </div>
 
+      <div className="mb-6 rounded-2xl bg-white p-5 ring-1 ring-slate-200/80">
+        <div className="mb-4 flex items-center justify-between gap-2">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900">Vendors</h2>
+            <p className="text-xs text-slate-500">Manage tanker suppliers used for deliveries</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              openDeliveryForm()
+              setVendorMode('new')
+            }}
+            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+          >
+            <UserPlus className="h-3.5 w-3.5" />
+            Add vendor
+          </button>
+        </div>
+
+        {vendors.length === 0 ? (
+          <p className="rounded-xl bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+            No vendors yet. Add one when recording a delivery or use Add vendor above.
+          </p>
+        ) : (
+          <div className="divide-y divide-slate-100 rounded-xl border border-slate-100">
+            {vendors.map((vendor) => (
+              <div
+                key={vendor.id}
+                className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
+              >
+                <div className="min-w-0">
+                  <p className="font-medium text-slate-900">{vendor.name}</p>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    {[
+                      vendor.contactPerson || null,
+                      vendor.phone || null,
+                      `${formatLiters(vendor.defaultCapacityLiters)}/tanker`,
+                      `${formatCurrency(vendor.defaultCostPerTanker)}/tanker`,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void handleDeleteVendor(vendor)}
+                  className="rounded-lg p-2 text-rose-500 hover:bg-rose-50"
+                  title={`Delete ${vendor.name}`}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {showForm && (
         <div className="mb-6 rounded-2xl bg-white p-5 ring-1 ring-slate-200/80">
           <h3 className="mb-4 font-semibold text-slate-900">Record Tanker Delivery / Order</h3>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-slate-700">Vendor</label>
-              <select
-                value={form.vendorId}
-                onChange={(e) => handleVendorChange(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm"
-              >
-                {vendors.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.name}
-                  </option>
-                ))}
-              </select>
+            <div className="sm:col-span-2 lg:col-span-3">
+              <div className="mb-1.5 flex items-center justify-between gap-2">
+                <label className="text-sm font-medium text-slate-700">Vendor</label>
+                {vendors.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setVendorMode((mode) => (mode === 'existing' ? 'new' : 'existing'))
+                    }
+                    className="inline-flex items-center gap-1 text-xs font-medium text-sky-600 hover:text-sky-700"
+                  >
+                    <UserPlus className="h-3.5 w-3.5" />
+                    {vendorMode === 'existing' ? 'Add new vendor' : 'Select existing vendor'}
+                  </button>
+                )}
+              </div>
+
+              {vendorMode === 'existing' && vendors.length > 0 ? (
+                <select
+                  value={form.vendorId}
+                  onChange={(e) => handleVendorChange(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm"
+                >
+                  {vendors.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-3">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-600">
+                      Vendor name <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={newVendor.name}
+                      onChange={(e) => setNewVendor({ ...newVendor, name: e.target.value })}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm"
+                      placeholder="e.g. AquaFlow Tankers"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-600">
+                      Contact person
+                    </label>
+                    <input
+                      type="text"
+                      value={newVendor.contactPerson}
+                      onChange={(e) =>
+                        setNewVendor({ ...newVendor, contactPerson: e.target.value })
+                      }
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm"
+                      placeholder="Optional"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-600">Phone</label>
+                    <input
+                      type="tel"
+                      value={newVendor.phone}
+                      onChange={(e) => setNewVendor({ ...newVendor, phone: e.target.value })}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm"
+                      placeholder="Optional"
+                    />
+                  </div>
+                  <p className="text-xs text-slate-500 sm:col-span-3">
+                    Default capacity and cost below will be saved with this vendor for future deliveries.
+                  </p>
+                </div>
+              )}
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700">Delivery Date</label>
@@ -408,6 +699,15 @@ export function TankerProcurementPage() {
                 placeholder="Optional"
               />
             </div>
+
+            <VehicleSnapshotField
+              file={vehicleSnapshot}
+              previewUrl={vehicleSnapshotPreview}
+              onChange={(file, previewUrl) => {
+                setVehicleSnapshot(file)
+                setVehicleSnapshotPreview(previewUrl)
+              }}
+            />
           </div>
           <p className="mt-3 text-sm text-slate-600">
             Total: <strong>{form.tankerCount * form.capacityLiters} L</strong> ·{' '}
@@ -418,13 +718,157 @@ export function TankerProcurementPage() {
             <button
               type="button"
               onClick={() => void handleSave()}
-              className="rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-600"
+              disabled={
+                saving || (vendorMode === 'new' ? !newVendor.name.trim() : !form.vendorId)
+              }
+              className="rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-600 disabled:opacity-50"
             >
-              Save
+              {saving ? 'Saving...' : 'Save'}
             </button>
             <button
               type="button"
-              onClick={() => setShowForm(false)}
+              onClick={() => {
+                if (vehicleSnapshotPreview?.startsWith('blob:')) {
+                  URL.revokeObjectURL(vehicleSnapshotPreview)
+                }
+                setVehicleSnapshot(null)
+                setVehicleSnapshotPreview(null)
+                setShowForm(false)
+              }}
+              className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {updatingDelivery && (
+        <div className="mb-6 rounded-2xl border border-sky-100 bg-white p-5 ring-1 ring-sky-100">
+          <div className="mb-4 flex items-start justify-between gap-2">
+            <div>
+              <h3 className="font-semibold text-slate-900">Update Delivery</h3>
+              <p className="mt-1 text-sm text-slate-500">
+                {updatingDelivery.vendorName} · currently{' '}
+                <span className="font-medium">{TANKER_STATUS_LABELS[updatingDelivery.status]}</span>
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={closeUpdateDelivery}
+              className="rounded-lg p-2 text-slate-400 hover:bg-slate-50 hover:text-slate-600"
+              aria-label="Close update form"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">Status</label>
+              <select
+                value={updateForm.status}
+                onChange={(e) =>
+                  setUpdateForm({ ...updateForm, status: e.target.value as TankerOrderStatus })
+                }
+                className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm"
+              >
+                {getAllowedStatusUpdates(updatingDelivery.status).map((s) => (
+                  <option key={s} value={s}>
+                    {TANKER_STATUS_LABELS[s]}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">Tanker Count</label>
+              <input
+                type="number"
+                min={1}
+                value={updateForm.tankerCount}
+                onChange={(e) =>
+                  setUpdateForm({ ...updateForm, tankerCount: Number(e.target.value) })
+                }
+                className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">Delivery Date</label>
+              <input
+                type="date"
+                value={updateForm.deliveryDate}
+                onChange={(e) =>
+                  setUpdateForm({ ...updateForm, deliveryDate: e.target.value })
+                }
+                className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">Invoice #</label>
+              <input
+                type="text"
+                value={updateForm.invoiceNumber}
+                onChange={(e) =>
+                  setUpdateForm({ ...updateForm, invoiceNumber: e.target.value })
+                }
+                className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm"
+                placeholder="Optional"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">Notes</label>
+              <input
+                type="text"
+                value={updateForm.notes}
+                onChange={(e) => setUpdateForm({ ...updateForm, notes: e.target.value })}
+                className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm"
+                placeholder="Optional"
+              />
+            </div>
+
+            {updateForm.status === 'delivered' && (
+              <VehicleSnapshotField
+                file={updateVehicleSnapshot}
+                previewUrl={updateVehicleSnapshotPreview ?? updatingDelivery.vehicleSnapshotUrl ?? null}
+                onChange={(file, previewUrl) => {
+                  setUpdateVehicleSnapshot(file)
+                  setUpdateVehicleSnapshotPreview(previewUrl)
+                }}
+              />
+            )}
+          </div>
+
+          <p className="mt-3 text-sm text-slate-600">
+            Total:{' '}
+            <strong>
+              {updateForm.tankerCount * updatingDelivery.capacityLiters} L
+            </strong>{' '}
+            ·{' '}
+            <strong>
+              {formatCurrency(updateForm.tankerCount * updatingDelivery.costPerTanker)}
+            </strong>
+          </p>
+
+          {updateForm.status === 'delivered' && updatingDelivery.status !== 'delivered' && (
+            <p className="mt-2 text-xs text-emerald-700">
+              Marking as delivered will include this order in billing sync and procurement totals.
+            </p>
+          )}
+
+          {updateError && <p className="mt-2 text-sm text-rose-600">{updateError}</p>}
+
+          <div className="mt-4 flex gap-2">
+            <button
+              type="button"
+              onClick={() => void handleUpdateDelivery()}
+              disabled={updating || updateForm.tankerCount < 1}
+              className="rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-600 disabled:opacity-50"
+            >
+              {updating ? 'Saving...' : 'Save Changes'}
+            </button>
+            <button
+              type="button"
+              onClick={closeUpdateDelivery}
               className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600"
             >
               Cancel

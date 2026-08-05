@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { Info, Pencil, Plus, Trash2, Upload, X } from 'lucide-react'
 import DataTable from 'react-data-table-component'
 import { PageHeader } from '@/components/common/PageHeader'
@@ -15,7 +15,6 @@ import {
 } from '@/lib/billing'
 import {
   deleteReading,
-  getFlatReadingEntries,
   getFlats,
   getMonthlySummaries,
   getReadings,
@@ -43,20 +42,12 @@ export function ReadingsPage() {
   const [error, setError] = useState('')
   const [showUpload, setShowUpload] = useState(false)
   const [timelineFlatId, setTimelineFlatId] = useState<string | null>(null)
-  const [timelineEntries, setTimelineEntries] = useState<MeterReading[]>([])
-  const [timelineLoading, setTimelineLoading] = useState(false)
+  const timelineRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (!timelineFlatId) {
-      setTimelineEntries([])
-      return
-    }
-    setTimelineLoading(true)
-    void getFlatReadingEntries(timelineFlatId, selectedMonth).then((entries) => {
-      setTimelineEntries(entries)
-      setTimelineLoading(false)
-    })
-  }, [timelineFlatId, selectedMonth, readings])
+    if (!timelineFlatId) return
+    timelineRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }, [timelineFlatId])
 
   const load = async () => {
     setLoading(true)
@@ -308,59 +299,62 @@ export function ReadingsPage() {
           </p>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {summaries.map((s) => (
-              <button
-                key={s.flatId}
-                type="button"
-                onClick={() =>
-                  setTimelineFlatId((current) => (current === s.flatId ? null : s.flatId))
-                }
-                className={`rounded-xl border px-4 py-3 text-left text-sm transition-colors ${
-                  timelineFlatId === s.flatId
-                    ? 'border-sky-300 bg-sky-50 ring-1 ring-sky-200'
-                    : 'border-slate-100 bg-slate-50 hover:border-slate-200 hover:bg-white'
-                }`}
-              >
-                <p className="font-medium text-slate-900">
-                  {flatMap[s.flatId]?.label ?? s.flatId}
-                </p>
-                <p className="mt-1 text-slate-600">
-                  {s.openingReading.toLocaleString()} → {s.closingReading.toLocaleString()} L
-                </p>
-                <p className="mt-1 font-semibold text-sky-700">
-                  {formatKL(s.consumptionKL)} · {s.readingCount} entr{s.readingCount === 1 ? 'y' : 'ies'}
-                </p>
-                <p className="mt-1 text-xs text-slate-400">Click to view timeline</p>
-              </button>
+              <Fragment key={s.flatId}>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setTimelineFlatId((current) => (current === s.flatId ? null : s.flatId))
+                  }
+                  className={`rounded-xl border px-4 py-3 text-left text-sm transition-colors ${
+                    timelineFlatId === s.flatId
+                      ? 'border-sky-300 bg-sky-50 ring-1 ring-sky-200'
+                      : 'border-slate-100 bg-slate-50 hover:border-slate-200 hover:bg-white'
+                  }`}
+                >
+                  <p className="font-medium text-slate-900">
+                    {flatMap[s.flatId]?.label ?? s.flatId}
+                  </p>
+                  <p className="mt-1 text-slate-600">
+                    {s.openingReading.toLocaleString()} → {s.closingReading.toLocaleString()} L
+                  </p>
+                  <p className="mt-1 font-semibold text-sky-700">
+                    {formatKL(s.consumptionKL)} · {s.readingCount} entr{s.readingCount === 1 ? 'y' : 'ies'}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    {timelineFlatId === s.flatId ? 'Click to hide timeline' : 'Click to view timeline'}
+                  </p>
+                </button>
+
+                {timelineFlatId === s.flatId && (
+                  <div
+                    ref={timelineRef}
+                    className="col-span-full rounded-2xl border border-sky-100 bg-white p-5 shadow-sm ring-1 ring-sky-100"
+                  >
+                    <div className="mb-4 flex items-center justify-between gap-2">
+                      <div>
+                        <h3 className="font-semibold text-slate-900">
+                          Reading Timeline — {flatMap[s.flatId]?.label ?? s.flatId}
+                        </h3>
+                        <p className="text-xs text-slate-500">{formatMonthLabel(selectedMonth)}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setTimelineFlatId(null)}
+                        className="rounded-lg p-2 text-slate-400 hover:bg-slate-50 hover:text-slate-600"
+                        aria-label="Close timeline"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <FlatReadingTimeline
+                      entries={s.readings}
+                      emptyMessage="No entries for this flat in the selected month."
+                    />
+                  </div>
+                )}
+              </Fragment>
             ))}
           </div>
-        </div>
-      )}
-
-      {timelineFlatId && (
-        <div className="mb-6 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200/80">
-          <div className="mb-4 flex items-center justify-between gap-2">
-            <div>
-              <h3 className="font-semibold text-slate-900">
-                Reading Timeline — {flatMap[timelineFlatId]?.label ?? timelineFlatId}
-              </h3>
-              <p className="text-xs text-slate-500">{formatMonthLabel(selectedMonth)}</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setTimelineFlatId(null)}
-              className="rounded-lg p-2 text-slate-400 hover:bg-slate-50 hover:text-slate-600"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-          {timelineLoading ? (
-            <LoadingSpinner label="Loading timeline..." />
-          ) : (
-            <FlatReadingTimeline
-              entries={timelineEntries}
-              emptyMessage="No entries for this flat in the selected month."
-            />
-          )}
         </div>
       )}
 
