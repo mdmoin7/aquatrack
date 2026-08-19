@@ -9,6 +9,7 @@ import {
   Database,
   Droplets,
   FileText,
+  ReceiptText,
   Gauge,
   LayoutDashboard,
   LogOut,
@@ -38,6 +39,7 @@ const adminNav = [
   { to: '/block-dashboard', label: 'Block Dashboard', icon: ClipboardList },
   { to: '/readings', label: 'Readings', icon: Gauge },
   { to: '/procurement', label: 'Tanker Procurement', icon: Truck },
+  { to: '/expenses', label: 'Society Expenses', icon: ReceiptText },
   { to: '/administration', label: 'Administration', icon: Building2 },
   { to: '/billing', label: 'Billing Config', icon: Settings },
   { to: '/users', label: 'Users', icon: Users },
@@ -51,6 +53,7 @@ const residentNav = [
   { to: '/resident', label: 'My Consumption', icon: Droplets },
   { to: '/analytics', label: 'Analytics', icon: BarChart3 },
   { to: '/notifications', label: 'Notifications', icon: Bell },
+  { to: '/monthly-expenses', label: 'Society Expenses', icon: ReceiptText },
 ]
 
 const guestNav = [

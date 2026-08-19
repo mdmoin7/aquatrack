@@ -113,6 +113,9 @@ export async function ensureLocalSeed(): Promise<void> {
     users: payload.users,
     tankerDeliveries: [],
     tankerVendors: [],
+    expenses: [],
+    expenseProvisions: [],
+    fundCollections: [],
   })
 
   localStorage.setItem(SEED_VERSION_KEY, SEED_VERSION)

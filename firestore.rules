@@ -177,6 +177,21 @@ service cloud.firestore {
         allow read: if sameSociety(societyId);
         allow write: if sameSociety(societyId) && isAdmin();
       }
+
+      match /expenses/{expenseId} {
+        allow read: if sameSociety(societyId);
+        allow write: if sameSociety(societyId) && isAdmin();
+      }
+
+      match /expenseProvisions/{month} {
+        allow read: if sameSociety(societyId);
+        allow write: if sameSociety(societyId) && isAdmin();
+      }
+
+      match /fundCollections/{collectionId} {
+        allow read: if sameSociety(societyId);
+        allow write: if sameSociety(societyId) && isAdmin();
+      }
     }
   }
 }

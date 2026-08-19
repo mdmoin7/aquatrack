@@ -243,3 +243,80 @@ export const TANKER_STATUS_LABELS: Record<TankerOrderStatus, string> = {
   delivered: 'Delivered',
   cancelled: 'Cancelled',
 }
+
+/** Standard operating-cost categories used for society expense reporting. */
+export type ExpenseCategory =
+  | 'water_tankers'
+  | 'electricity'
+  | 'lift_maintenance'
+  | 'dg_generator'
+  | 'utilities'
+  | 'repairs_maintenance'
+  | 'security'
+  | 'housekeeping'
+  | 'staff_salaries'
+  | 'administration'
+  | 'amenities'
+  | 'insurance_taxes'
+  | 'other'
+
+export interface SocietyExpense {
+  id: string
+  month: string
+  expenseDate: string
+  category: ExpenseCategory
+  description: string
+  amount: number
+  vendor?: string
+  referenceNumber?: string
+  notes?: string
+  createdBy: string
+  createdAt: string
+  updatedAt: string
+}
+
+/** Timing for a billing period: collections and payments often settle next month. */
+export interface MonthlyExpenseProvision {
+  id: string
+  billingMonth: string
+  collectionMonth: string
+  paymentMonth: string
+  residentNote?: string
+  updatedBy: string
+  updatedAt: string
+  /** Set when an admin generates the resident-facing snapshot. */
+  snapshotGeneratedAt?: string
+  snapshotCutoffDate?: string
+  /** Positive closing balance available for the next billing month. */
+  surplusCarriedForward?: number
+  carryForwardMonth?: string
+}
+
+/** A received society-fund payment attributed to a billing period. */
+export interface FundCollection {
+  id: string
+  billingMonth: string
+  collectedDate: string
+  amount: number
+  source: string
+  referenceNumber?: string
+  notes?: string
+  recordedBy: string
+  createdAt: string
+}
+
+export const EXPENSE_CATEGORY_LABELS: Record<ExpenseCategory, string> = {
+  water_tankers: 'Water Tankers',
+  electricity: 'Electricity',
+  lift_maintenance: 'Lift',
+  dg_generator: 'DG Generator',
+  utilities: 'Utilities',
+  repairs_maintenance: 'Repairs & Maintenance',
+  security: 'Security',
+  housekeeping: 'Housekeeping',
+  staff_salaries: 'Vendor Payments',
+  administration: 'Administration',
+  amenities: 'Amenities',
+  insurance_taxes: 'Insurance & Taxes',
+  other: 'Other',
+}

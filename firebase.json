@@ -5,7 +5,12 @@
   },
   "hosting": {
     "public": "dist",
-    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "site": "aqua-track",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
     "rewrites": [
       {
         "source": "**",
@@ -41,7 +46,9 @@
         ]
       }
     ],
-    "predeploy": ["npm run build"]
+    "predeploy": [
+      "npm run build"
+    ]
   },
   "emulators": {
     "auth": {

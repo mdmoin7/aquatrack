@@ -6,6 +6,9 @@ import type {
   StoredFlatBill,
   TankerDelivery,
   TankerVendor,
+  SocietyExpense,
+  MonthlyExpenseProvision,
+  FundCollection,
   User,
 } from '@/types'
 
@@ -20,6 +23,9 @@ interface AppData {
   users: User[]
   tankerDeliveries: TankerDelivery[]
   tankerVendors: TankerVendor[]
+  expenses: SocietyExpense[]
+  expenseProvisions: MonthlyExpenseProvision[]
+  fundCollections: FundCollection[]
 }
 
 const DEFAULT_DATA: AppData = {
@@ -31,6 +37,9 @@ const DEFAULT_DATA: AppData = {
   users: [],
   tankerDeliveries: [],
   tankerVendors: [],
+  expenses: [],
+  expenseProvisions: [],
+  fundCollections: [],
 }
 
 function load(): AppData {
@@ -170,6 +179,65 @@ export const localStore = {
     save(data)
   },
 
+  getExpenses(month?: string): SocietyExpense[] {
+    const expenses = load().expenses ?? []
+    return month ? expenses.filter((expense) => expense.month === month) : expenses
+  },
+
+  upsertExpense(expense: SocietyExpense): void {
+    const data = load()
+    if (!data.expenses) data.expenses = []
+    const idx = data.expenses.findIndex((item) => item.id === expense.id)
+    if (idx >= 0) data.expenses[idx] = expense
+    else data.expenses.push(expense)
+    save(data)
+  },
+
+  deleteExpense(id: string): void {
+    const data = load()
+    data.expenses = (data.expenses ?? []).filter((expense) => expense.id !== id)
+    save(data)
+  },
+
+  getExpenseProvision(month: string): MonthlyExpenseProvision | null {
+    return (load().expenseProvisions ?? []).find((provision) => provision.billingMonth === month) ?? null
+  },
+
+  upsertExpenseProvision(provision: MonthlyExpenseProvision): void {
+    const data = load()
+    if (!data.expenseProvisions) data.expenseProvisions = []
+    const idx = data.expenseProvisions.findIndex((item) => item.billingMonth === provision.billingMonth)
+    if (idx >= 0) data.expenseProvisions[idx] = provision
+    else data.expenseProvisions.push(provision)
+    save(data)
+  },
+
+  deleteExpenseProvision(month: string): void {
+    const data = load()
+    data.expenseProvisions = (data.expenseProvisions ?? []).filter((item) => item.billingMonth !== month)
+    save(data)
+  },
+
+  getFundCollections(month?: string): FundCollection[] {
+    const collections = load().fundCollections ?? []
+    return month ? collections.filter((item) => item.billingMonth === month) : collections
+  },
+
+  upsertFundCollection(collection: FundCollection): void {
+    const data = load()
+    if (!data.fundCollections) data.fundCollections = []
+    const idx = data.fundCollections.findIndex((item) => item.id === collection.id)
+    if (idx >= 0) data.fundCollections[idx] = collection
+    else data.fundCollections.push(collection)
+    save(data)
+  },
+
+  deleteFundCollection(id: string): void {
+    const data = load()
+    data.fundCollections = (data.fundCollections ?? []).filter((item) => item.id !== id)
+    save(data)
+  },
+
   replaceAll(data: AppData): void {
     save({
       flats: data.flats,
@@ -180,6 +248,9 @@ export const localStore = {
       users: data.users,
       tankerDeliveries: data.tankerDeliveries ?? [],
       tankerVendors: data.tankerVendors ?? [],
+      expenses: data.expenses ?? [],
+      expenseProvisions: data.expenseProvisions ?? [],
+      fundCollections: data.fundCollections ?? [],
     })
   },
 

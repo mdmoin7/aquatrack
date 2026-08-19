@@ -6,6 +6,9 @@ import type {
   StoredFlatBill,
   TankerDelivery,
   TankerVendor,
+  SocietyExpense,
+  MonthlyExpenseProvision,
+  FundCollection,
   User,
 } from '@/types'
 import { isFirebaseConfigured } from '@/lib/firebase'
@@ -112,6 +115,48 @@ export const dataStore = {
   async deleteTankerVendor(id: string): Promise<void> {
     if (isCloudBackend()) await firestoreStore.deleteTankerVendor(id)
     else localStore.deleteTankerVendor(id)
+  },
+
+  async getExpenses(month?: string): Promise<SocietyExpense[]> {
+    return isCloudBackend() ? firestoreStore.getExpenses(month) : localStore.getExpenses(month)
+  },
+
+  async upsertExpense(expense: SocietyExpense): Promise<void> {
+    if (isCloudBackend()) await firestoreStore.upsertExpense(expense)
+    else localStore.upsertExpense(expense)
+  },
+
+  async deleteExpense(id: string): Promise<void> {
+    if (isCloudBackend()) await firestoreStore.deleteExpense(id)
+    else localStore.deleteExpense(id)
+  },
+
+  async getExpenseProvision(month: string): Promise<MonthlyExpenseProvision | null> {
+    return isCloudBackend() ? firestoreStore.getExpenseProvision(month) : localStore.getExpenseProvision(month)
+  },
+
+  async upsertExpenseProvision(provision: MonthlyExpenseProvision): Promise<void> {
+    if (isCloudBackend()) await firestoreStore.upsertExpenseProvision(provision)
+    else localStore.upsertExpenseProvision(provision)
+  },
+
+  async deleteExpenseProvision(month: string): Promise<void> {
+    if (isCloudBackend()) await firestoreStore.deleteExpenseProvision(month)
+    else localStore.deleteExpenseProvision(month)
+  },
+
+  async getFundCollections(month?: string): Promise<FundCollection[]> {
+    return isCloudBackend() ? firestoreStore.getFundCollections(month) : localStore.getFundCollections(month)
+  },
+
+  async upsertFundCollection(fundCollection: FundCollection): Promise<void> {
+    if (isCloudBackend()) await firestoreStore.upsertFundCollection(fundCollection)
+    else localStore.upsertFundCollection(fundCollection)
+  },
+
+  async deleteFundCollection(id: string): Promise<void> {
+    if (isCloudBackend()) await firestoreStore.deleteFundCollection(id)
+    else localStore.deleteFundCollection(id)
   },
 
   async getUsers(): Promise<User[]> {

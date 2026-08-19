@@ -32,4 +32,10 @@ export const Collections = {
   tankerDelivery: (id: string) => `societies/${activeSocietyId}/tankerDeliveries/${id}`,
   tankerVendors: () => `societies/${activeSocietyId}/tankerVendors`,
   tankerVendor: (id: string) => `societies/${activeSocietyId}/tankerVendors/${id}`,
+  expenses: () => `societies/${activeSocietyId}/expenses`,
+  expense: (id: string) => `societies/${activeSocietyId}/expenses/${id}`,
+  expenseProvisions: () => `societies/${activeSocietyId}/expenseProvisions`,
+  expenseProvision: (month: string) => `societies/${activeSocietyId}/expenseProvisions/${month}`,
+  fundCollections: () => `societies/${activeSocietyId}/fundCollections`,
+  fundCollection: (id: string) => `societies/${activeSocietyId}/fundCollections/${id}`,
 } as const

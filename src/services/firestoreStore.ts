@@ -17,6 +17,9 @@ import type {
   StoredFlatBill,
   TankerDelivery,
   TankerVendor,
+  SocietyExpense,
+  MonthlyExpenseProvision,
+  FundCollection,
   User,
 } from '@/types'
 import { Collections } from '@/lib/firestorePaths'
@@ -83,7 +86,7 @@ export const firestoreStore = {
   },
 
   async clearSocietyCollections(): Promise<void> {
-    const [flats, readings, billingConfigs, flatBills, alerts, deliveries, vendors] =
+    const [flats, readings, billingConfigs, flatBills, alerts, deliveries, vendors, expenses, provisions, collections] =
       await Promise.all([
       getDocs(collection(db(), Collections.flats())),
       getDocs(collection(db(), Collections.readings())),
@@ -92,6 +95,9 @@ export const firestoreStore = {
       getDocs(collection(db(), Collections.alerts())),
       getDocs(collection(db(), Collections.tankerDeliveries())),
       getDocs(collection(db(), Collections.tankerVendors())),
+      getDocs(collection(db(), Collections.expenses())),
+      getDocs(collection(db(), Collections.expenseProvisions())),
+      getDocs(collection(db(), Collections.fundCollections())),
     ])
 
     await Promise.all([
@@ -102,6 +108,9 @@ export const firestoreStore = {
       ...alerts.docs.map((d) => deleteDoc(d.ref)),
       ...deliveries.docs.map((d) => deleteDoc(d.ref)),
       ...vendors.docs.map((d) => deleteDoc(d.ref)),
+      ...expenses.docs.map((d) => deleteDoc(d.ref)),
+      ...provisions.docs.map((d) => deleteDoc(d.ref)),
+      ...collections.docs.map((d) => deleteDoc(d.ref)),
     ])
   },
 
@@ -210,6 +219,50 @@ export const firestoreStore = {
 
   async deleteTankerVendor(id: string): Promise<void> {
     await deleteDoc(doc(db(), Collections.tankerVendor(id)))
+  },
+
+  async getExpenses(month?: string): Promise<SocietyExpense[]> {
+    const col = collection(db(), Collections.expenses())
+    const snap = month ? await getDocs(query(col, where('month', '==', month))) : await getDocs(col)
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as SocietyExpense)
+  },
+
+  async upsertExpense(expense: SocietyExpense): Promise<void> {
+    const { id, ...data } = expense
+    await writeDoc(doc(db(), Collections.expense(id)), { ...data, id })
+  },
+
+  async deleteExpense(id: string): Promise<void> {
+    await deleteDoc(doc(db(), Collections.expense(id)))
+  },
+
+  async getExpenseProvision(month: string): Promise<MonthlyExpenseProvision | null> {
+    const snap = await getDoc(doc(db(), Collections.expenseProvision(month)))
+    return snap.exists() ? ({ id: snap.id, ...snap.data() } as MonthlyExpenseProvision) : null
+  },
+
+  async upsertExpenseProvision(provision: MonthlyExpenseProvision): Promise<void> {
+    const { id, billingMonth, ...data } = provision
+    await writeDoc(doc(db(), Collections.expenseProvision(billingMonth)), { ...data, id, billingMonth })
+  },
+
+  async deleteExpenseProvision(month: string): Promise<void> {
+    await deleteDoc(doc(db(), Collections.expenseProvision(month)))
+  },
+
+  async getFundCollections(month?: string): Promise<FundCollection[]> {
+    const col = collection(db(), Collections.fundCollections())
+    const snap = month ? await getDocs(query(col, where('billingMonth', '==', month))) : await getDocs(col)
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as FundCollection)
+  },
+
+  async upsertFundCollection(fundCollection: FundCollection): Promise<void> {
+    const { id, ...data } = fundCollection
+    await writeDoc(doc(db(), Collections.fundCollection(id)), { ...data, id })
+  },
+
+  async deleteFundCollection(id: string): Promise<void> {
+    await deleteDoc(doc(db(), Collections.fundCollection(id)))
   },
 
   async getUsers(societyId?: string): Promise<User[]> {

@@ -23,6 +23,8 @@ import { CacheInspectorPage } from '@/pages/CacheInspectorPage'
 import { TankerProcurementPage } from '@/pages/TankerProcurementPage'
 import { ResidentPage } from '@/pages/ResidentPage'
 import { UsersPage } from '@/pages/UsersPage'
+import { ExpensesPage } from '@/pages/ExpensesPage'
+import { ExpenseSnapshotPage } from '@/pages/ExpenseSnapshotPage'
 
 function AppRoutes() {
   return (
@@ -98,6 +100,15 @@ function AppRoutes() {
             </AdminRoute>
           }
         />
+        <Route
+          path="/expenses"
+          element={
+            <AdminRoute>
+              <ExpensesPage />
+            </AdminRoute>
+          }
+        />
+        <Route path="/monthly-expenses" element={<StaffRoute><ExpenseSnapshotPage /></StaffRoute>} />
         <Route
           path="/administration"
           element={
