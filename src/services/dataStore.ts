@@ -20,7 +20,17 @@ function isCloudBackend(): boolean {
   return isFirebaseConfigured
 }
 
-const READINGS_CACHE_TTL = 10 * 60 * 1000
+const CURRENT_MONTH_READINGS_CACHE_TTL = 24 * 60 * 60 * 1000
+const HISTORICAL_READINGS_CACHE_TTL = 30 * 24 * 60 * 60 * 1000
+
+function getReadingsCacheTtl(month?: string): number {
+  if (!month) return CURRENT_MONTH_READINGS_CACHE_TTL
+
+  const currentMonth = new Date().toISOString().slice(0, 7)
+  return month === currentMonth
+    ? CURRENT_MONTH_READINGS_CACHE_TTL
+    : HISTORICAL_READINGS_CACHE_TTL
+}
 
 /** Unified data access — IndexedDB in local/demo mode, Firestore with persistent read-through caching when Firebase is configured. */
 export const dataStore = {
@@ -43,7 +53,7 @@ export const dataStore = {
     if (cached) return cached
 
     const readings = await firestoreStore.getReadings(month)
-    await cacheSet(key, readings, READINGS_CACHE_TTL)
+    await cacheSet(key, readings, getReadingsCacheTtl(month))
     return readings
   },
   async upsertReading(reading: MeterReading): Promise<void> {
