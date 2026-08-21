@@ -1,4 +1,4 @@
-import type { BillingConfig, Flat, FlatBill, MeterReading } from '@/types'
+import type { BillingConfig, Flat, FlatBill, MeterReading, SlabRate, SlabChargeBreakdown } from '@/types'
 
 const LITERS_PER_KL = 1000
 
@@ -28,6 +28,56 @@ export function calculateWaterCharge(consumptionKL: number, effectiveRate: numbe
   return Math.round(consumptionKL * effectiveRate * 100) / 100
 }
 
+export function calculateSlabWaterCharge(
+  consumptionKL: number,
+  slabs: SlabRate[],
+): {
+  charge: number
+  breakdown: SlabChargeBreakdown[]
+} {
+  const breakdown: SlabChargeBreakdown[] = []
+  let remaining = consumptionKL
+  let totalCharge = 0
+
+  const sortedSlabs = [...slabs].sort((a, b) => a.limitKL - b.limitKL)
+  let previousLimit = 0
+
+  sortedSlabs.forEach((slab, index) => {
+    if (remaining <= 0) {
+      breakdown.push({
+        slabIndex: index + 1,
+        limitKL: slab.limitKL,
+        ratePerKL: slab.ratePerKL,
+        consumptionInSlabKL: 0,
+        charge: 0,
+      })
+      return
+    }
+
+    const isLast = index === sortedSlabs.length - 1
+    const slabWidth = isLast ? Infinity : (slab.limitKL - previousLimit)
+    const consumedInSlab = Math.min(remaining, slabWidth)
+    const charge = Math.round(consumedInSlab * slab.ratePerKL * 100) / 100
+
+    breakdown.push({
+      slabIndex: index + 1,
+      limitKL: slab.limitKL,
+      ratePerKL: slab.ratePerKL,
+      consumptionInSlabKL: Math.round(consumedInSlab * 1000) / 1000,
+      charge,
+    })
+
+    totalCharge += charge
+    remaining -= consumedInSlab
+    previousLimit = slab.limitKL
+  })
+
+  return {
+    charge: Math.round(totalCharge * 100) / 100,
+    breakdown,
+  }
+}
+
 export function calculateMaintenanceShare(
   config: BillingConfig,
   flatConsumptionKL: number,
@@ -49,7 +99,20 @@ export function calculateFlatBill(
     reading.consumptionKL,
     totalSocietyConsumptionKL,
   )
-  const waterCharge = calculateWaterCharge(reading.consumptionKL, effectiveRate)
+
+  let waterCharge = 0
+  let slabBreakdown: SlabChargeBreakdown[] | undefined = undefined
+  let flatEffectiveRate = effectiveRate
+
+  if (config.billingMode === 'slab' && config.slabs && config.slabs.length > 0) {
+    const slabResult = calculateSlabWaterCharge(reading.consumptionKL, config.slabs)
+    waterCharge = slabResult.charge
+    slabBreakdown = slabResult.breakdown
+    flatEffectiveRate = reading.consumptionKL > 0 ? Math.round((waterCharge / reading.consumptionKL) * 100) / 100 : 0
+  } else {
+    waterCharge = calculateWaterCharge(reading.consumptionKL, effectiveRate)
+  }
+
   const finalBill = Math.round((waterCharge + maintenanceShare) * 100) / 100
 
   return {
@@ -60,13 +123,14 @@ export function calculateFlatBill(
     closingReading: reading.closingReading,
     consumptionLiters: reading.consumptionLiters,
     consumptionKL: reading.consumptionKL,
-    effectiveRatePerKL: effectiveRate,
+    effectiveRatePerKL: flatEffectiveRate,
     maintenanceShare,
     waterCharge,
     finalBill,
     efficiencyScore: 0,
     lastUpdated: reading.updatedAt,
     enteredBy: reading.enteredBy,
+    slabBreakdown,
   }
 }
 

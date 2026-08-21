@@ -190,8 +190,12 @@ export async function getSocietyStats(month: string): Promise<SocietyStats> {
   ])
 
   const totalConsumptionKL = summaries.reduce((sum, s) => sum + s.consumptionKL, 0)
-  const totalWaterCost = config ? calculateTotalWaterCost(config) : 0
-  const effectiveRate = config ? calculateEffectiveRate(config, totalConsumptionKL) : 0
+  const totalWaterCost = config?.billingMode === 'slab'
+    ? bills.reduce((sum, b) => sum + b.waterCharge, 0)
+    : (config ? calculateTotalWaterCost(config) : 0)
+  const effectiveRate = totalConsumptionKL > 0
+    ? Math.round((totalWaterCost / totalConsumptionKL) * 100) / 100
+    : 0
 
   const topConsumers = bills
     .slice()

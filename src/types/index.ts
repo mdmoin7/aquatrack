@@ -56,6 +56,10 @@ export interface AuditEntry {
   timestamp: string;
   previousValues?: Partial<MeterReading>;
 }
+export interface SlabRate {
+  limitKL: number;
+  ratePerKL: number;
+}
 export interface BillingConfig {
   id: string;
   month: string;
@@ -68,6 +72,15 @@ export interface BillingConfig {
   lockedBy?: string;
   billsGeneratedAt?: string;
   billsGeneratedBy?: string;
+  billingMode?: 'fixed' | 'slab';
+  slabs?: SlabRate[];
+}
+export interface SlabChargeBreakdown {
+  slabIndex: number;
+  limitKL: number;
+  ratePerKL: number;
+  consumptionInSlabKL: number;
+  charge: number;
 }
 export interface FlatBill {
   flatId: string;
@@ -84,6 +97,7 @@ export interface FlatBill {
   efficiencyScore: number;
   lastUpdated: string;
   enteredBy: string;
+  slabBreakdown?: SlabChargeBreakdown[];
 }
 export interface StoredFlatBill extends FlatBill {
   id: string;
