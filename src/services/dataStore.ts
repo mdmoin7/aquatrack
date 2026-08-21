@@ -14,12 +14,15 @@ import type {
 import { isFirebaseConfigured } from '@/lib/firebase'
 import { firestoreStore } from '@/services/firestoreStore'
 import { indexedDbStore } from '@/services/indexedDbStore'
+import { cacheGet, cacheInvalidate, cacheInvalidatePrefix, cacheSet, CacheKeys } from '@/lib/cache'
 
 function isCloudBackend(): boolean {
   return isFirebaseConfigured
 }
 
-/** Unified data access — IndexedDB in local/demo mode, Firestore when Firebase is configured. */
+const READINGS_CACHE_TTL = 10 * 60 * 1000
+
+/** Unified data access — IndexedDB in local/demo mode, Firestore with persistent read-through caching when Firebase is configured. */
 export const dataStore = {
   async getFlats(): Promise<Flat[]> {
     return isCloudBackend() ? firestoreStore.getFlats() : indexedDbStore.getFlats()
@@ -33,15 +36,32 @@ export const dataStore = {
     else await indexedDbStore.clearAll()
   },
   async getReadings(month?: string): Promise<MeterReading[]> {
-    return isCloudBackend() ? firestoreStore.getReadings(month) : indexedDbStore.getReadings(month)
+    if (!isCloudBackend()) return indexedDbStore.getReadings(month)
+
+    const key = CacheKeys.readings(month ?? 'all')
+    const cached = await cacheGet<MeterReading[]>(key)
+    if (cached) return cached
+
+    const readings = await firestoreStore.getReadings(month)
+    await cacheSet(key, readings, READINGS_CACHE_TTL)
+    return readings
   },
   async upsertReading(reading: MeterReading): Promise<void> {
-    if (isCloudBackend()) await firestoreStore.upsertReading(reading)
-    else await indexedDbStore.upsertReading(reading)
+    if (isCloudBackend()) {
+      await firestoreStore.upsertReading(reading)
+      await cacheInvalidate(CacheKeys.readings(reading.month))
+      await cacheInvalidate(CacheKeys.readings('all'))
+      return
+    }
+    await indexedDbStore.upsertReading(reading)
   },
   async deleteReading(id: string): Promise<void> {
-    if (isCloudBackend()) await firestoreStore.deleteReading(id)
-    else await indexedDbStore.deleteReading(id)
+    if (isCloudBackend()) {
+      await firestoreStore.deleteReading(id)
+      await cacheInvalidatePrefix('readings:')
+      return
+    }
+    await indexedDbStore.deleteReading(id)
   },
   async getBillingConfig(month: string): Promise<BillingConfig | null> {
     return isCloudBackend() ? firestoreStore.getBillingConfig(month) : indexedDbStore.getBillingConfig(month)
