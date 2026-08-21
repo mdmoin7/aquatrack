@@ -13,7 +13,9 @@ import type {
 } from '@/types'
 
 const DB_NAME = 'aquatrack-local'
-const DB_VERSION = 1
+// Increment whenever the required object-store schema changes. Version 2 also
+// repairs databases created by older builds that did not contain all stores.
+const DB_VERSION = 2
 const LEGACY_KEY = 'aquatrack-data'
 
 const STORES = [
@@ -64,8 +66,10 @@ let dbPromise: Promise<IDBDatabase> | null = null
 
 function openDb(): Promise<IDBDatabase> {
   if (dbPromise) return dbPromise
+
   dbPromise = new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION)
+
     request.onupgradeneeded = () => {
       const db = request.result
       for (const store of STORES) {
@@ -74,15 +78,33 @@ function openDb(): Promise<IDBDatabase> {
         }
       }
     }
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error ?? new Error('Unable to open local database'))
+
+    request.onsuccess = () => {
+      const db = request.result
+      db.onversionchange = () => {
+        db.close()
+        dbPromise = null
+      }
+      resolve(db)
+    }
+
+    request.onerror = () => {
+      dbPromise = null
+      reject(request.error ?? new Error('Unable to open local database'))
+    }
   })
+
   return dbPromise
 }
 
 async function getAll<T>(storeName: StoreName): Promise<T[]> {
   const db = await openDb()
   return new Promise((resolve, reject) => {
+    if (!db.objectStoreNames.contains(storeName)) {
+      dbPromise = null
+      reject(new Error(`IndexedDB object store '${storeName}' is missing`))
+      return
+    }
     const tx = db.transaction(storeName, 'readonly')
     const request = tx.objectStore(storeName).getAll()
     request.onsuccess = () => resolve(request.result as T[])
@@ -93,6 +115,11 @@ async function getAll<T>(storeName: StoreName): Promise<T[]> {
 async function put<T extends { id: string }>(storeName: StoreName, value: T): Promise<void> {
   const db = await openDb()
   return new Promise((resolve, reject) => {
+    if (!db.objectStoreNames.contains(storeName)) {
+      dbPromise = null
+      reject(new Error(`IndexedDB object store '${storeName}' is missing`))
+      return
+    }
     const tx = db.transaction(storeName, 'readwrite')
     tx.objectStore(storeName).put(value)
     tx.oncomplete = () => resolve()
@@ -103,6 +130,11 @@ async function put<T extends { id: string }>(storeName: StoreName, value: T): Pr
 async function remove(storeName: StoreName, id: string): Promise<void> {
   const db = await openDb()
   return new Promise((resolve, reject) => {
+    if (!db.objectStoreNames.contains(storeName)) {
+      dbPromise = null
+      reject(new Error(`IndexedDB object store '${storeName}' is missing`))
+      return
+    }
     const tx = db.transaction(storeName, 'readwrite')
     tx.objectStore(storeName).delete(id)
     tx.oncomplete = () => resolve()
@@ -113,6 +145,11 @@ async function remove(storeName: StoreName, id: string): Promise<void> {
 async function clear(storeName: StoreName): Promise<void> {
   const db = await openDb()
   return new Promise((resolve, reject) => {
+    if (!db.objectStoreNames.contains(storeName)) {
+      dbPromise = null
+      reject(new Error(`IndexedDB object store '${storeName}' is missing`))
+      return
+    }
     const tx = db.transaction(storeName, 'readwrite')
     tx.objectStore(storeName).clear()
     tx.oncomplete = () => resolve()
