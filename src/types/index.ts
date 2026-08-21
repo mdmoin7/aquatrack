@@ -1,17 +1,6 @@
 export type UserRole = 'admin' | 'resident' | 'guest' | 'superadmin' | 'meter_reader'
-
 export type BlockId = 'A' | 'B' | 'C' | 'COMMON'
-
-export interface User {
-  id: string
-  email: string
-  displayName: string
-  role: UserRole
-  flatId?: string
-  societyId?: string
-  assignedBlocks?: BlockId[]
-}
-
+export interface User { id: string; email: string; displayName: string; role: UserRole; flatId?: string; societyId?: string; assignedBlocks?: BlockId[] }
 export interface Flat { id: string; block: BlockId; unit: string; label: string }
 export interface MeterReading { id: string; flatId: string; month: string; openingReading: number; closingReading: number; consumptionLiters: number; consumptionKL: number; enteredBy: string; enteredByRole: UserRole; createdAt: string; updatedAt: string; auditTrail: AuditEntry[] }
 export interface MonthlyFlatSummary { flatId: string; month: string; openingReading: number; closingReading: number; consumptionLiters: number; consumptionKL: number; readingCount: number; lastUpdated: string; enteredBy: string; readings: MeterReading[] }
@@ -36,34 +25,7 @@ export interface TankerProcurementSummary { month: string; totalTankers: number;
 export const TANKER_STATUS_LABELS: Record<TankerOrderStatus, string> = { planned: 'Planned', ordered: 'Ordered', delivered: 'Delivered', cancelled: 'Cancelled' }
 export type ExpenseCategory = 'water_tankers' | 'electricity' | 'lift_maintenance' | 'dg_generator' | 'utilities' | 'repairs_maintenance' | 'security' | 'housekeeping' | 'staff_salaries' | 'administration' | 'amenities' | 'insurance_taxes' | 'other'
 export interface SocietyExpense { id: string; month: string; expenseDate: string; category: ExpenseCategory; description: string; amount: number; vendor?: string; referenceNumber?: string; notes?: string; createdBy: string; createdAt: string; updatedAt: string }
-
-export interface ExpenseSnapshotData {
-  cutoffDate: string
-  generatedAt: string
-  collectedTotal: number
-  expenseTotal: number
-  carriedForward: number
-  surplus: number
-  categories: Array<{ category: ExpenseCategory; amount: number }>
-  residentNote?: string
-  collectionMonth: string
-  paymentMonth: string
-}
-
-export interface MonthlyExpenseProvision {
-  id: string
-  billingMonth: string
-  collectionMonth: string
-  paymentMonth: string
-  residentNote?: string
-  updatedBy: string
-  updatedAt: string
-  snapshotGeneratedAt?: string
-  snapshotCutoffDate?: string
-  snapshotData?: ExpenseSnapshotData
-  surplusCarriedForward?: number
-  carryForwardMonth?: string
-}
-
+export interface ExpenseSnapshotData { cutoffDate: string; generatedAt: string; collectedTotal: number; expenseTotal: number; carriedForward: number; surplus: number; categories: Array<{ category: ExpenseCategory; amount: number }>; residentNote?: string; collectionMonth: string; paymentMonth: string }
+export interface MonthlyExpenseProvision { id: string; billingMonth: string; collectionMonth: string; paymentMonth: string; residentNote?: string; updatedBy: string; updatedAt: string; snapshotGeneratedAt?: string; snapshotCutoffDate?: string; snapshotData?: ExpenseSnapshotData; snapshotPublishedAt?: string; snapshotPublishedBy?: string; surplusCarriedForward?: number; carryForwardMonth?: string }
 export interface FundCollection { id: string; billingMonth: string; collectedDate: string; amount: number; source: string; referenceNumber?: string; notes?: string; recordedBy: string; createdAt: string }
 export const EXPENSE_CATEGORY_LABELS: Record<ExpenseCategory, string> = { water_tankers: 'Water Tankers', electricity: 'Electricity', lift_maintenance: 'Lift', dg_generator: 'DG Generator', utilities: 'Utilities', repairs_maintenance: 'Repairs & Maintenance', security: 'Security', housekeeping: 'Housekeeping', staff_salaries: 'Vendor Payments', administration: 'Administration', amenities: 'Amenities', insurance_taxes: 'Insurance & Taxes', other: 'Other' }
