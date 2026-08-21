@@ -48,7 +48,7 @@ export function ExpenseSnapshotPage() {
   const shareText = provision ? `AquaTrack monthly expense snapshot — ${formatMonthLabel(selectedMonth)} billing${cutoff ? ` (as of ${new Date(`${cutoff}T00:00:00`).toLocaleDateString('en-IN')})` : ''}\n\nFunds collected: ${formatCurrency(collectedTotal)}${carriedForward ? `\nSurplus carried forward: ${formatCurrency(carriedForward)}` : ''}\nAvailable funds: ${formatCurrency(availableFunds)}${collectionTotal ? ` (${formatCurrency(collectionTotal)} billed)` : ''}\nVendor payments scheduled: ${formatMonthLabel(provision.paymentMonth)}\nExpenses recorded: ${formatCurrency(expenseTotal)}\n${surplus >= 0 ? 'Surplus' : 'Shortfall'}: ${formatCurrency(Math.abs(surplus))}${surplus > 0 ? ` (carried to ${formatMonthLabel(getNextMonth(selectedMonth))})` : ''}\n${categories.map((item) => `• ${EXPENSE_CATEGORY_LABELS[item.category]}: ${formatCurrency(item.amount)}`).join('\n')}${provision.residentNote ? `\n\nNote: ${provision.residentNote}` : ''}` : ''
 
   const copy = async () => { await navigator.clipboard.writeText(shareText); setNotice('Snapshot copied to your clipboard.') }
-  const shareImage = async () => {
+  const downloadImage = async () => {
     if (!provision) return
     try {
       const canvas = createSnapshotCanvas({
@@ -66,18 +66,18 @@ export function ExpenseSnapshotPage() {
       })
       const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
       if (!blob) throw new Error('Unable to create image.')
-      const file = new File([blob], `aquatrack-expenses-${selectedMonth}.png`, { type: 'image/png' })
-      if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ title: `${formatMonthLabel(selectedMonth)} expense snapshot`, files: [file] })
-      } else {
-        const url = URL.createObjectURL(blob)
-        const link = document.createElement('a')
-        link.href = url; link.download = file.name; link.click()
-        URL.revokeObjectURL(url)
-        setNotice('Snapshot image downloaded. You can share it with residents.')
-      }
-    } catch (error) {
-      if ((error as Error).name !== 'AbortError') setNotice('Unable to create the snapshot image. Please try again.')
+      const fileName = `aquatrack-expenses-${selectedMonth}.png`
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = fileName
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+      setNotice('Snapshot image downloaded. You can share it with residents.')
+    } catch {
+      setNotice('Unable to create the snapshot image. Please try again.')
     }
   }
   const saveTiming = async () => {
@@ -124,7 +124,7 @@ export function ExpenseSnapshotPage() {
 
   if (loading || !provision) return <LoadingSpinner label="Preparing resident snapshot..." />
   return <div>
-    <PageHeader title="Monthly Expense Snapshot" description={`Resident-ready summary for ${formatMonthLabel(selectedMonth)} billing`} actions={<>{isAdmin && <button type="button" disabled={saving} onClick={() => void generateSnapshot()} className="inline-flex items-center gap-2 rounded-xl border border-sky-200 bg-white px-4 py-2 text-sm font-semibold text-sky-700 hover:bg-sky-50"><CalendarClock className="h-4 w-4" /> Generate Snapshot</button>}<button type="button" onClick={() => void copy()} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"><Copy className="h-4 w-4" /> Copy Text</button><button type="button" onClick={() => void shareImage()} className="inline-flex items-center gap-2 rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-600"><ImageDown className="h-4 w-4" /> Share Image</button></>} />
+    <PageHeader title="Monthly Expense Snapshot" description={`Resident-ready summary for ${formatMonthLabel(selectedMonth)} billing`} actions={<>{isAdmin && <button type="button" disabled={saving} onClick={() => void generateSnapshot()} className="inline-flex items-center gap-2 rounded-xl border border-sky-200 bg-white px-4 py-2 text-sm font-semibold text-sky-700 hover:bg-sky-50"><CalendarClock className="h-4 w-4" /> Generate Snapshot</button>}<button type="button" onClick={() => void copy()} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"><Copy className="h-4 w-4" /> Copy Text</button><button type="button" onClick={() => void downloadImage()} className="inline-flex items-center gap-2 rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-600"><ImageDown className="h-4 w-4" /> Download Snapshot</button></>} />
     <div className="mb-6 rounded-2xl border border-sky-100 bg-sky-50 p-5 text-sm text-sky-900"><p className="font-semibold">{formatMonthLabel(selectedMonth)} expenses · {formatMonthLabel(provision.collectionMonth)} collections · {formatMonthLabel(provision.paymentMonth)} vendor settlement{cutoff ? ` · snapshot through ${new Date(`${cutoff}T00:00:00`).toLocaleDateString('en-IN')}` : ''}.</p><p className="mt-1 text-sky-800">The balance combines all expenses attributed to {formatMonthLabel(selectedMonth)} with funds recorded against that same billing month, even when collections happen in {formatMonthLabel(provision.collectionMonth)}. Generate Snapshot uses the latest funds-collected record date as its cutoff.</p></div>
     <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><StatCard title="Funds Collected" value={formatCurrency(collectedTotal)} subtitle={collectionTotal ? `${formatCurrency(collectionTotal)} billed` : `Scheduled for ${formatMonthLabel(provision.collectionMonth)}`} icon={WalletCards} accent="emerald" /><StatCard title="Prior Surplus" value={formatCurrency(carriedForward)} subtitle={carriedForward ? `From ${formatMonthLabel(getPreviousMonth(selectedMonth))}` : 'No carried balance'} icon={WalletCards} accent="violet" /><StatCard title="Vendor Payments" value={formatCurrency(expenseTotal)} subtitle={`Scheduled / paid in ${formatMonthLabel(provision.paymentMonth)}`} icon={IndianRupee} accent="rose" /><StatCard title={surplus >= 0 ? 'Surplus' : 'Shortfall'} value={formatCurrency(Math.abs(surplus))} subtitle={surplus > 0 ? `Carries to ${formatMonthLabel(getNextMonth(selectedMonth))}` : 'More funds are required'} icon={CalendarClock} accent={surplus >= 0 ? 'emerald' : 'rose'} /></div>
     {isAdmin && <section className="mb-6 rounded-2xl bg-white p-5 ring-1 ring-slate-200/80"><h2 className="mb-1 text-sm font-semibold text-slate-900">Provisioning Schedule</h2><p className="mb-4 text-sm text-slate-500">Set when this billing period is collected from residents and settled with vendors.</p><div className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-medium text-slate-700">Collection month<input type="month" value={provision.collectionMonth} onChange={(e) => setProvision({ ...provision, collectionMonth: e.target.value })} className="mt-1.5 block w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm" /></label><label className="text-sm font-medium text-slate-700">Vendor payment month<input type="month" value={provision.paymentMonth} onChange={(e) => setProvision({ ...provision, paymentMonth: e.target.value })} className="mt-1.5 block w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm" /></label><label className="sm:col-span-2 text-sm font-medium text-slate-700">Resident note<input value={provision.residentNote ?? ''} onChange={(e) => setProvision({ ...provision, residentNote: e.target.value })} placeholder="e.g. Vendor invoices will be settled after collection closes." className="mt-1.5 block w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm" /></label></div><button type="button" disabled={saving} onClick={() => void saveTiming()} className="mt-4 rounded-xl bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-900 disabled:opacity-50">{saving ? 'Saving...' : 'Save Provisioning'}</button><div className="mt-5 border-t border-slate-100 pt-5"><h3 className="text-sm font-semibold text-slate-900">Correct billing month</h3><p className="mt-1 text-xs text-slate-500">Use this only when the whole period was entered under the wrong month. It moves expenses, funds collected, and provisioning together.</p><div className="mt-3 flex flex-wrap gap-2"><select value={correctedMonth} onChange={(e) => setCorrectedMonth(e.target.value)} className="rounded-xl border border-slate-200 px-3 py-2 text-sm">{getPreviousMonths(24).map((month) => <option key={month} value={month}>{formatMonthLabel(month)}</option>)}</select><button type="button" disabled={saving || correctedMonth === selectedMonth} onClick={() => void correctMonth()} className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50">Move to selected month</button></div></div></section>}
@@ -169,7 +169,6 @@ function createSnapshotCanvas(data: {
   ctx.fillStyle = '#ffffff'; ctx.font = '700 46px system-ui, sans-serif'; ctx.fillText(`${data.month} Expense Snapshot`, pad, 136)
   ctx.fillStyle = '#e0f2fe'; ctx.font = '400 26px system-ui, sans-serif'; ctx.fillText(`Expenses through ${data.cutoff}`, pad, 184)
   ctx.fillStyle = '#f0f9ff'; ctx.font = '400 22px system-ui, sans-serif'; ctx.fillText(`Collection: ${data.collectionMonth}   ·   Vendor settlement: ${data.paymentMonth}`, pad, 226)
-
   const metrics = [
     ['Funds collected', formatCurrency(data.collectedTotal), '#0f172a'],
     ['Expenses', formatCurrency(data.expenseTotal), '#0f172a'],
