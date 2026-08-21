@@ -61,6 +61,25 @@ export async function persistentCacheDelete(key: string): Promise<void> {
   })
 }
 
+export async function persistentCacheDeletePrefix(prefix: string): Promise<void> {
+  const db = await openDb()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite')
+    const store = tx.objectStore(STORE_NAME)
+    const request = store.openCursor()
+    request.onsuccess = () => {
+      const cursor = request.result
+      if (!cursor) return
+      const key = String(cursor.key)
+      if (key.startsWith(prefix)) cursor.delete()
+      cursor.continue()
+    }
+    request.onerror = () => reject(request.error)
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+  })
+}
+
 export const PersistentCacheTTL = {
   staticData: 24 * 60 * 60 * 1000,
   monthlyData: 10 * 60 * 1000,
