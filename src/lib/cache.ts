@@ -2,7 +2,9 @@ import type { CacheConfig, CacheEntry } from '@/types'
 
 const DB_NAME = 'aquatrack-cache'
 const STORE_NAME = 'cache'
-const DB_VERSION = 1
+// Version 2 repairs cache databases created by older builds where the cache
+// object store may not have been created successfully.
+const DB_VERSION = 2
 
 const DEFAULT_CONFIG: CacheConfig = {
   ttlMs: 5 * 60 * 1000,
@@ -11,24 +13,57 @@ const DEFAULT_CONFIG: CacheConfig = {
 
 let memoryCache = new Map<string, CacheEntry>()
 let config = { ...DEFAULT_CONFIG }
+let dbPromise: Promise<IDBDatabase> | null = null
 
 function openDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
+  if (dbPromise) return dbPromise
+
+  dbPromise = new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION)
-    request.onerror = () => reject(request.error)
-    request.onsuccess = () => resolve(request.result)
+
     request.onupgradeneeded = () => {
       const db = request.result
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME, { keyPath: 'key' })
       }
     }
+
+    request.onsuccess = () => {
+      const db = request.result
+      db.onversionchange = () => {
+        db.close()
+        dbPromise = null
+      }
+      resolve(db)
+    }
+
+    request.onerror = () => {
+      dbPromise = null
+      reject(request.error ?? new Error('Unable to open persistent cache'))
+    }
+
+    request.onblocked = () => {
+      // A previous tab may still have the database open. The caller will use
+      // the in-memory cache fallback if the upgrade cannot complete.
+    }
   })
+
+  return dbPromise
+}
+
+function getStore(db: IDBDatabase): IDBObjectStore | null {
+  if (!db.objectStoreNames.contains(STORE_NAME)) return null
+  return db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME)
 }
 
 async function idbGet<T>(key: string): Promise<CacheEntry<T> | null> {
   const db = await openDb()
   return new Promise((resolve, reject) => {
+    if (!db.objectStoreNames.contains(STORE_NAME)) {
+      dbPromise = null
+      reject(new Error(`IndexedDB object store '${STORE_NAME}' is missing`))
+      return
+    }
     const tx = db.transaction(STORE_NAME, 'readonly')
     const store = tx.objectStore(STORE_NAME)
     const req = store.get(key)
@@ -40,6 +75,11 @@ async function idbGet<T>(key: string): Promise<CacheEntry<T> | null> {
 async function idbSet<T>(entry: CacheEntry<T>): Promise<void> {
   const db = await openDb()
   return new Promise((resolve, reject) => {
+    if (!db.objectStoreNames.contains(STORE_NAME)) {
+      dbPromise = null
+      reject(new Error(`IndexedDB object store '${STORE_NAME}' is missing`))
+      return
+    }
     const tx = db.transaction(STORE_NAME, 'readwrite')
     const store = tx.objectStore(STORE_NAME)
     const req = store.put(entry)
@@ -51,6 +91,11 @@ async function idbSet<T>(entry: CacheEntry<T>): Promise<void> {
 async function idbDelete(key: string): Promise<void> {
   const db = await openDb()
   return new Promise((resolve, reject) => {
+    if (!db.objectStoreNames.contains(STORE_NAME)) {
+      dbPromise = null
+      reject(new Error(`IndexedDB object store '${STORE_NAME}' is missing`))
+      return
+    }
     const tx = db.transaction(STORE_NAME, 'readwrite')
     const store = tx.objectStore(STORE_NAME)
     const req = store.delete(key)
@@ -62,6 +107,11 @@ async function idbDelete(key: string): Promise<void> {
 async function idbClear(): Promise<void> {
   const db = await openDb()
   return new Promise((resolve, reject) => {
+    if (!db.objectStoreNames.contains(STORE_NAME)) {
+      dbPromise = null
+      reject(new Error(`IndexedDB object store '${STORE_NAME}' is missing`))
+      return
+    }
     const tx = db.transaction(STORE_NAME, 'readwrite')
     const store = tx.objectStore(STORE_NAME)
     const req = store.clear()
@@ -73,6 +123,11 @@ async function idbClear(): Promise<void> {
 async function idbGetAll(): Promise<CacheEntry[]> {
   const db = await openDb()
   return new Promise((resolve, reject) => {
+    if (!db.objectStoreNames.contains(STORE_NAME)) {
+      dbPromise = null
+      reject(new Error(`IndexedDB object store '${STORE_NAME}' is missing`))
+      return
+    }
     const tx = db.transaction(STORE_NAME, 'readonly')
     const store = tx.objectStore(STORE_NAME)
     const req = store.getAll()
