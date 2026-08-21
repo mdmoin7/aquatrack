@@ -9,273 +9,47 @@ export interface User {
   role: UserRole
   flatId?: string
   societyId?: string
-  /** Blocks a meter reader may enter readings for. */
   assignedBlocks?: BlockId[]
 }
 
-export interface Flat {
-  id: string
-  block: BlockId
-  unit: string
-  label: string
-}
-
-export interface MeterReading {
-  id: string
-  flatId: string
-  month: string
-  openingReading: number
-  closingReading: number
-  consumptionLiters: number
-  consumptionKL: number
-  enteredBy: string
-  enteredByRole: UserRole
-  createdAt: string
-  updatedAt: string
-  auditTrail: AuditEntry[]
-}
-
-/** One billable row per flat per month — derived from all readings in that month. */
-export interface MonthlyFlatSummary {
-  flatId: string
-  month: string
-  openingReading: number
-  closingReading: number
-  consumptionLiters: number
-  consumptionKL: number
-  readingCount: number
-  lastUpdated: string
-  enteredBy: string
-  readings: MeterReading[]
-}
-
-export interface AuditEntry {
-  action: 'create' | 'update' | 'delete'
-  userId: string
-  userName: string
-  timestamp: string
-  previousValues?: Partial<MeterReading>
-}
-
-export interface BillingConfig {
-  id: string
-  month: string
-  tankerCapacityLiters: number
-  tankerCost: number
-  tankerCount: number
-  maintenanceSurcharge: number
-  locked: boolean
-  lockedAt?: string
-  lockedBy?: string
-  billsGeneratedAt?: string
-  billsGeneratedBy?: string
-}
-
-export interface FlatBill {
-  flatId: string
-  flat: Flat
-  month: string
-  openingReading: number
-  closingReading: number
-  consumptionLiters: number
-  consumptionKL: number
-  effectiveRatePerKL: number
-  maintenanceShare: number
-  waterCharge: number
-  finalBill: number
-  efficiencyScore: number
-  lastUpdated: string
-  enteredBy: string
-}
-
-/** Persisted snapshot of a flat bill at generation time. */
-export interface StoredFlatBill extends FlatBill {
-  id: string
-  generatedAt: string
-  generatedBy: string
-}
-
-export interface SocietyStats {
-  month: string
-  totalConsumptionKL: number
-  totalConsumptionLiters: number
-  totalWaterCost: number
-  effectiveRatePerKL: number
-  blockConsumption: Record<BlockId, number>
-  topConsumers: Array<{ flat: Flat; consumptionKL: number }>
-  dailyTrend: Array<{ date: string; consumptionKL: number }>
-  tankerCount: number
-  flatCount: number
-}
-
-export type AlertType =
-  | 'consumption_spike'
-  | 'sudden_drop'
-  | 'meter_reset'
-  | 'leakage_suspicion'
-  | 'unusual_usage'
-  | 'month_end_reading'
-  | 'tanker_procurement_update'
-
-/** Who should see this alert. Defaults to flat-scoped consumption alerts. */
+export interface Flat { id: string; block: BlockId; unit: string; label: string }
+export interface MeterReading { id: string; flatId: string; month: string; openingReading: number; closingReading: number; consumptionLiters: number; consumptionKL: number; enteredBy: string; enteredByRole: UserRole; createdAt: string; updatedAt: string; auditTrail: AuditEntry[] }
+export interface MonthlyFlatSummary { flatId: string; month: string; openingReading: number; closingReading: number; consumptionLiters: number; consumptionKL: number; readingCount: number; lastUpdated: string; enteredBy: string; readings: MeterReading[] }
+export interface AuditEntry { action: 'create' | 'update' | 'delete'; userId: string; userName: string; timestamp: string; previousValues?: Partial<MeterReading> }
+export interface BillingConfig { id: string; month: string; tankerCapacityLiters: number; tankerCost: number; tankerCount: number; maintenanceSurcharge: number; locked: boolean; lockedAt?: string; lockedBy?: string; billsGeneratedAt?: string; billsGeneratedBy?: string }
+export interface FlatBill { flatId: string; flat: Flat; month: string; openingReading: number; closingReading: number; consumptionLiters: number; consumptionKL: number; effectiveRatePerKL: number; maintenanceShare: number; waterCharge: number; finalBill: number; efficiencyScore: number; lastUpdated: string; enteredBy: string }
+export interface StoredFlatBill extends FlatBill { id: string; generatedAt: string; generatedBy: string }
+export interface SocietyStats { month: string; totalConsumptionKL: number; totalConsumptionLiters: number; totalWaterCost: number; effectiveRatePerKL: number; blockConsumption: Record<BlockId, number>; topConsumers: Array<{ flat: Flat; consumptionKL: number }>; dailyTrend: Array<{ date: string; consumptionKL: number }>; tankerCount: number; flatCount: number }
+export type AlertType = 'consumption_spike' | 'sudden_drop' | 'meter_reset' | 'leakage_suspicion' | 'unusual_usage' | 'month_end_reading' | 'tanker_procurement_update'
 export type AlertAudience = 'flat' | 'superadmin'
-
-export interface Alert {
-  id: string
-  flatId: string
-  flatLabel: string
-  type: AlertType
-  message: string
-  severity: 'low' | 'medium' | 'high'
-  month: string
-  createdAt: string
-  acknowledged: boolean
-  audience?: AlertAudience
-}
-
-export interface FlatAnalytics {
-  flat: Flat
-  month: string
-  currentConsumptionKL: number
-  rolling3MonthAvgKL: number
-  societyAvgKL: number
-  blockAvgKL: number
-  estimatedBill: number
-  estimatedTankers: number
-  efficiencyScore: number
-  timeline: Array<{ month: string; consumptionKL: number; bill: number }>
-  spikes: Array<{ month: string; percentIncrease: number }>
-  anomalies: Alert[]
-}
-
-export interface InvoiceRow {
-  block: string
-  unit: string
-  chargeType: string
-  chargeDescription: string
-  chargeDate: string
-  payByDate: string
-  amount: number
-}
-
-export interface CacheEntry<T = unknown> {
-  key: string
-  data: T
-  expiresAt: number
-  createdAt: number
-}
-
-export interface CacheConfig {
-  ttlMs: number
-  useIndexedDB: boolean
-}
-
-export const BLOCK_LABELS: Record<BlockId, string> = {
-  A: 'Block A',
-  B: 'Block B',
-  C: 'Block C',
-  COMMON: 'Common / Pool',
-}
-
-export const ALERT_LABELS: Record<AlertType, string> = {
-  consumption_spike: 'Consumption Spike',
-  sudden_drop: 'Sudden Drop',
-  meter_reset: 'Meter Reset',
-  leakage_suspicion: 'Leakage Suspicion',
-  unusual_usage: 'Unusual Usage',
-  month_end_reading: 'Month-End Reading',
-  tanker_procurement_update: 'Tanker Procurement Update',
-}
-
+export interface Alert { id: string; flatId: string; flatLabel: string; type: AlertType; message: string; severity: 'low' | 'medium' | 'high'; month: string; createdAt: string; acknowledged: boolean; audience?: AlertAudience }
+export interface FlatAnalytics { flat: Flat; month: string; currentConsumptionKL: number; rolling3MonthAvgKL: number; societyAvgKL: number; blockAvgKL: number; estimatedBill: number; estimatedTankers: number; efficiencyScore: number; timeline: Array<{ month: string; consumptionKL: number; bill: number }>; spikes: Array<{ month: string; percentIncrease: number }>; anomalies: Alert[] }
+export interface InvoiceRow { block: string; unit: string; chargeType: string; chargeDescription: string; chargeDate: string; payByDate: string; amount: number }
+export interface CacheEntry<T = unknown> { key: string; data: T; expiresAt: number; createdAt: number }
+export interface CacheConfig { ttlMs: number; useIndexedDB: boolean }
+export const BLOCK_LABELS: Record<BlockId, string> = { A: 'Block A', B: 'Block B', C: 'Block C', COMMON: 'Common / Pool' }
+export const ALERT_LABELS: Record<AlertType, string> = { consumption_spike: 'Consumption Spike', sudden_drop: 'Sudden Drop', meter_reset: 'Meter Reset', leakage_suspicion: 'Leakage Suspicion', unusual_usage: 'Unusual Usage', month_end_reading: 'Month-End Reading', tanker_procurement_update: 'Tanker Procurement Update' }
 export type TankerOrderStatus = 'planned' | 'ordered' | 'delivered' | 'cancelled'
+export interface TankerVendor { id: string; name: string; contactPerson: string; phone: string; defaultCapacityLiters: number; defaultCostPerTanker: number; active: boolean }
+export interface TankerDelivery { id: string; month: string; deliveryDate: string; vendorId: string; vendorName: string; tankerCount: number; capacityLiters: number; costPerTanker: number; totalLiters: number; totalCost: number; invoiceNumber?: string; vehicleSnapshotUrl?: string; status: TankerOrderStatus; notes?: string; orderedBy: string; createdAt: string; updatedAt: string }
+export interface TankerProcurementSummary { month: string; totalTankers: number; totalLiters: number; totalCost: number; avgCostPerTanker: number; capacityLiters: number; deliveryCount: number; deliveredCount: number; plannedCount: number; requiredLiters: number; requiredTankers: number; procurementGapLiters: number; procurementGapTankers: number; coveragePercent: number }
+export const TANKER_STATUS_LABELS: Record<TankerOrderStatus, string> = { planned: 'Planned', ordered: 'Ordered', delivered: 'Delivered', cancelled: 'Cancelled' }
+export type ExpenseCategory = 'water_tankers' | 'electricity' | 'lift_maintenance' | 'dg_generator' | 'utilities' | 'repairs_maintenance' | 'security' | 'housekeeping' | 'staff_salaries' | 'administration' | 'amenities' | 'insurance_taxes' | 'other'
+export interface SocietyExpense { id: string; month: string; expenseDate: string; category: ExpenseCategory; description: string; amount: number; vendor?: string; referenceNumber?: string; notes?: string; createdBy: string; createdAt: string; updatedAt: string }
 
-export interface TankerVendor {
-  id: string
-  name: string
-  contactPerson: string
-  phone: string
-  defaultCapacityLiters: number
-  defaultCostPerTanker: number
-  active: boolean
+export interface ExpenseSnapshotData {
+  cutoffDate: string
+  generatedAt: string
+  collectedTotal: number
+  expenseTotal: number
+  carriedForward: number
+  surplus: number
+  categories: Array<{ category: ExpenseCategory; amount: number }>
+  residentNote?: string
+  collectionMonth: string
+  paymentMonth: string
 }
 
-export interface TankerDelivery {
-  id: string
-  month: string
-  deliveryDate: string
-  vendorId: string
-  vendorName: string
-  tankerCount: number
-  capacityLiters: number
-  costPerTanker: number
-  totalLiters: number
-  totalCost: number
-  invoiceNumber?: string
-  /** Compressed JPEG as a data URL — embedded in Firestore, no Storage needed. */
-  vehicleSnapshotUrl?: string
-  status: TankerOrderStatus
-  notes?: string
-  orderedBy: string
-  createdAt: string
-  updatedAt: string
-}
-
-export interface TankerProcurementSummary {
-  month: string
-  totalTankers: number
-  totalLiters: number
-  totalCost: number
-  avgCostPerTanker: number
-  capacityLiters: number
-  deliveryCount: number
-  deliveredCount: number
-  plannedCount: number
-  requiredLiters: number
-  requiredTankers: number
-  procurementGapLiters: number
-  procurementGapTankers: number
-  coveragePercent: number
-}
-
-export const TANKER_STATUS_LABELS: Record<TankerOrderStatus, string> = {
-  planned: 'Planned',
-  ordered: 'Ordered',
-  delivered: 'Delivered',
-  cancelled: 'Cancelled',
-}
-
-/** Standard operating-cost categories used for society expense reporting. */
-export type ExpenseCategory =
-  | 'water_tankers'
-  | 'electricity'
-  | 'lift_maintenance'
-  | 'dg_generator'
-  | 'utilities'
-  | 'repairs_maintenance'
-  | 'security'
-  | 'housekeeping'
-  | 'staff_salaries'
-  | 'administration'
-  | 'amenities'
-  | 'insurance_taxes'
-  | 'other'
-
-export interface SocietyExpense {
-  id: string
-  month: string
-  expenseDate: string
-  category: ExpenseCategory
-  description: string
-  amount: number
-  vendor?: string
-  referenceNumber?: string
-  notes?: string
-  createdBy: string
-  createdAt: string
-  updatedAt: string
-}
-
-/** Timing for a billing period: collections and payments often settle next month. */
 export interface MonthlyExpenseProvision {
   id: string
   billingMonth: string
@@ -284,39 +58,12 @@ export interface MonthlyExpenseProvision {
   residentNote?: string
   updatedBy: string
   updatedAt: string
-  /** Set when an admin generates the resident-facing snapshot. */
   snapshotGeneratedAt?: string
   snapshotCutoffDate?: string
-  /** Positive closing balance available for the next billing month. */
+  snapshotData?: ExpenseSnapshotData
   surplusCarriedForward?: number
   carryForwardMonth?: string
 }
 
-/** A received society-fund payment attributed to a billing period. */
-export interface FundCollection {
-  id: string
-  billingMonth: string
-  collectedDate: string
-  amount: number
-  source: string
-  referenceNumber?: string
-  notes?: string
-  recordedBy: string
-  createdAt: string
-}
-
-export const EXPENSE_CATEGORY_LABELS: Record<ExpenseCategory, string> = {
-  water_tankers: 'Water Tankers',
-  electricity: 'Electricity',
-  lift_maintenance: 'Lift',
-  dg_generator: 'DG Generator',
-  utilities: 'Utilities',
-  repairs_maintenance: 'Repairs & Maintenance',
-  security: 'Security',
-  housekeeping: 'Housekeeping',
-  staff_salaries: 'Vendor Payments',
-  administration: 'Administration',
-  amenities: 'Amenities',
-  insurance_taxes: 'Insurance & Taxes',
-  other: 'Other',
-}
+export interface FundCollection { id: string; billingMonth: string; collectedDate: string; amount: number; source: string; referenceNumber?: string; notes?: string; recordedBy: string; createdAt: string }
+export const EXPENSE_CATEGORY_LABELS: Record<ExpenseCategory, string> = { water_tankers: 'Water Tankers', electricity: 'Electricity', lift_maintenance: 'Lift', dg_generator: 'DG Generator', utilities: 'Utilities', repairs_maintenance: 'Repairs & Maintenance', security: 'Security', housekeeping: 'Housekeeping', staff_salaries: 'Vendor Payments', administration: 'Administration', amenities: 'Amenities', insurance_taxes: 'Insurance & Taxes', other: 'Other' }
