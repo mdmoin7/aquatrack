@@ -1,181 +1,34 @@
 import { useEffect, useState } from 'react'
+import { HelpCircle, Layers, Link as LinkIcon, Plus, Save, Trash2, Truck } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { Save, Truck } from 'lucide-react'
 import { PageHeader } from '@/components/common/PageHeader'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { useAppContext } from '@/context/AppContext'
-import { formatCurrency, formatMonthLabel } from '@/lib/billing'
-import { formatLiters, DEFAULT_TANKER_CAPACITY_LITERS, DEFAULT_TANKER_COST_PER_TANKER } from '@/lib/tanker'
+import { calculateSlabWaterCharge, formatCurrency, formatMonthLabel } from '@/lib/billing'
+import { DEFAULT_TANKER_CAPACITY_LITERS, DEFAULT_TANKER_COST_PER_TANKER, formatLiters } from '@/lib/tanker'
 import { getBillingConfig, getSocietyStats, saveBillingConfig } from '@/services/billingService'
 import { getProcurementSummary } from '@/services/tankerService'
-import type { TankerProcurementSummary } from '@/types'
+import type { SlabRate, TankerProcurementSummary } from '@/types'
 
-export function BillingConfigPage() {
-  const { selectedMonth, refresh, refreshKey } = useAppContext()
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [locked, setLocked] = useState(false)
-  const [preview, setPreview] = useState({ totalCost: 0, effectiveRate: 0, totalKL: 0 })
-  const [procurement, setProcurement] = useState<TankerProcurementSummary | null>(null)
-  const [form, setForm] = useState({
-    tankerCapacityLiters: DEFAULT_TANKER_CAPACITY_LITERS,
-    tankerCost: DEFAULT_TANKER_COST_PER_TANKER,
-    tankerCount: 0,
-    maintenanceSurcharge: 5000,
-  })
+const DEFAULT_SLABS: SlabRate[] = [{limitKL:10,ratePerKL:50},{limitKL:20,ratePerKL:80},{limitKL:999999,ratePerKL:120}]
+const cloneDefaultSlabs=()=>DEFAULT_SLABS.map(s=>({...s}))
 
-  useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    void Promise.all([
-      getBillingConfig(selectedMonth),
-      getSocietyStats(selectedMonth),
-      getProcurementSummary(selectedMonth),
-    ]).then(([config, stats, proc]) => {
-        if (cancelled) return
-        if (config) {
-          setForm({
-            tankerCapacityLiters: config.tankerCapacityLiters,
-            tankerCost: config.tankerCost,
-            tankerCount: config.tankerCount,
-            maintenanceSurcharge: config.maintenanceSurcharge,
-          })
-          setLocked(config.locked)
-        }
-        setProcurement(proc)
-        setPreview({
-          totalCost: config
-            ? config.tankerCount * config.tankerCost + config.maintenanceSurcharge
-            : 0,
-          effectiveRate: stats.effectiveRatePerKL,
-          totalKL: stats.totalConsumptionKL,
-        })
-        setLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [selectedMonth, refreshKey])
-
-  const liveTotalCost = form.tankerCount * form.tankerCost + form.maintenanceSurcharge
-  const liveEffectiveRate =
-    preview.totalKL > 0 ? Math.round((liveTotalCost / preview.totalKL) * 100) / 100 : 0
-
-  const handleSave = async () => {
-    setSaving(true)
-    try {
-      await saveBillingConfig({ month: selectedMonth, ...form })
-      refresh()
-      setPreview((p) => ({ ...p, totalCost: liveTotalCost, effectiveRate: liveEffectiveRate }))
-    } catch (e) {
-      alert(e instanceof Error ? e.message : 'Save failed')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  if (loading) return <LoadingSpinner />
-
-  return (
-    <div>
-      <PageHeader
-        title="Billing Configuration"
-        description={`Tanker & rate setup for ${formatMonthLabel(selectedMonth)}`}
-      />
-
-      {procurement && procurement.totalTankers > 0 && (
-        <div className="mb-6 flex items-start gap-3 rounded-2xl bg-sky-50 p-4 ring-1 ring-sky-100">
-          <Truck className="mt-0.5 h-5 w-5 shrink-0 text-sky-600" />
-          <div className="text-sm text-sky-900">
-            <p className="font-medium">Linked to Tanker Procurement</p>
-            <p className="mt-1 text-sky-700">
-              {procurement.totalTankers} tankers delivered ·{' '}
-              {formatLiters(procurement.totalLiters)} · {formatCurrency(procurement.totalCost)} total
-              cost.{' '}
-              <Link to="/procurement" className="font-medium underline">
-                View procurement
-              </Link>
-            </p>
-          </div>
-        </div>
-      )}
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200/80">
-          <h2 className="mb-4 font-semibold text-slate-900">Monthly Configuration</h2>
-          {locked && (
-            <p className="mb-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-700">
-              This month is locked. Configuration cannot be edited.
-            </p>
-          )}
-          <div className="space-y-4">
-            {[
-              { key: 'tankerCapacityLiters', label: 'Tanker Capacity (L)' },
-              { key: 'tankerCost', label: 'Cost Per Tanker (₹)' },
-              { key: 'tankerCount', label: 'Tanker Count' },
-              { key: 'maintenanceSurcharge', label: 'Maintenance Surcharge (₹)' },
-            ].map(({ key, label }) => (
-              <div key={key}>
-                <label className="mb-1.5 block text-sm font-medium text-slate-700">{label}</label>
-                <input
-                  type="number"
-                  disabled={locked}
-                  value={form[key as keyof typeof form]}
-                  onChange={(e) =>
-                    setForm({ ...form, [key]: Number(e.target.value) })
-                  }
-                  className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm disabled:bg-slate-50"
-                />
-              </div>
-            ))}
-          </div>
-          {!locked && (
-            <button
-              type="button"
-              disabled={saving}
-              onClick={() => void handleSave()}
-              className="mt-6 inline-flex items-center gap-2 rounded-xl bg-sky-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-600 disabled:opacity-60"
-            >
-              <Save className="h-4 w-4" />
-              {saving ? 'Saving...' : 'Save Configuration'}
-            </button>
-          )}
-        </div>
-
-        <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200/80">
-          <h2 className="mb-4 font-semibold text-slate-900">Billing Formula Preview</h2>
-          <div className="space-y-4 rounded-xl bg-slate-50 p-5 text-sm text-slate-700">
-            <div>
-              <p className="font-medium text-slate-900">Total Water Cost</p>
-              <p className="mt-1 font-mono text-xs text-slate-500">
-                Tanker Count × Cost Per Tanker + Maintenance
-              </p>
-              <p className="mt-2 text-lg font-semibold text-sky-600">
-                {formatCurrency(liveTotalCost)}
-              </p>
-            </div>
-            <div>
-              <p className="font-medium text-slate-900">Society Consumption</p>
-              <p className="mt-2 text-lg font-semibold">{preview.totalKL.toFixed(2)} kL</p>
-            </div>
-            <div>
-              <p className="font-medium text-slate-900">Effective ₹/kL</p>
-              <p className="mt-1 font-mono text-xs text-slate-500">
-                Total Water Cost ÷ Total Society Consumption
-              </p>
-              <p className="mt-2 text-lg font-semibold text-emerald-600">
-                {formatCurrency(liveEffectiveRate)}/kL
-              </p>
-            </div>
-            <div>
-              <p className="font-medium text-slate-900">Resident Bill</p>
-              <p className="mt-1 font-mono text-xs text-slate-500">
-                Resident Consumption (kL) × Effective ₹/kL
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
+export function BillingConfigPage(){
+ const {selectedMonth,refresh,refreshKey}=useAppContext(); const [loading,setLoading]=useState(true); const [saving,setSaving]=useState(false); const [locked,setLocked]=useState(false); const [procurement,setProcurement]=useState<TankerProcurementSummary|null>(null); const [totalKL,setTotalKL]=useState(0)
+ const [form,setForm]=useState({tankerCapacityLiters:DEFAULT_TANKER_CAPACITY_LITERS,tankerCost:DEFAULT_TANKER_COST_PER_TANKER,tankerCount:0,maintenanceSurcharge:5000,billingMode:'fixed' as 'fixed'|'slab',slabs:cloneDefaultSlabs()})
+ useEffect(()=>{let cancelled=false;setLoading(true);void Promise.all([getBillingConfig(selectedMonth),getSocietyStats(selectedMonth),getProcurementSummary(selectedMonth)]).then(([config,stats,proc])=>{if(cancelled)return;setProcurement(proc);setTotalKL(stats.totalConsumptionKL);if(config){setForm({tankerCapacityLiters:config.tankerCapacityLiters,tankerCost:config.tankerCost,tankerCount:config.tankerCount,maintenanceSurcharge:config.maintenanceSurcharge,billingMode:config.billingMode??'fixed',slabs:config.slabs?.length?config.slabs.map(s=>({...s})):cloneDefaultSlabs()});setLocked(config.locked)}else{setForm({tankerCapacityLiters:DEFAULT_TANKER_CAPACITY_LITERS,tankerCost:DEFAULT_TANKER_COST_PER_TANKER,tankerCount:proc?.totalTankers??0,maintenanceSurcharge:5000,billingMode:'fixed',slabs:cloneDefaultSlabs()});setLocked(false)}setLoading(false)});return()=>{cancelled=true}},[selectedMonth,refreshKey])
+ const liveTotalCost=form.tankerCount*form.tankerCost+form.maintenanceSurcharge; const liveFixedRate=totalKL>0?Math.round(liveTotalCost/totalKL*100)/100:0
+ const updateSlab=(index:number,field:'limitKL'|'ratePerKL',value:number)=>setForm(f=>({...f,slabs:f.slabs.map((s,i)=>i===index?{...s,[field]:value}:s)}))
+ const addSlab=()=>setForm(f=>{const slabs=f.slabs.map(s=>({...s}));const last=slabs.pop()??{limitKL:999999,ratePerKL:120};const prev=slabs[slabs.length-1];const limit=prev?Math.max(prev.limitKL+1,prev.limitKL+10):10;slabs.push({limitKL:limit,ratePerKL:Math.max(0,Math.round((prev?.ratePerKL??last.ratePerKL+30+last.ratePerKL)/2))},last);return{...f,slabs}})
+ const deleteSlab=(index:number)=>{if(form.slabs.length<=1)return alert('You must have at least one slab.');setForm(f=>{const slabs=f.slabs.filter((_,i)=>i!==index).map(s=>({...s}));slabs[slabs.length-1].limitKL=999999;return{...f,slabs}})}
+ const handleSave=async()=>{setSaving(true);try{if(form.billingMode==='slab'){if(!form.slabs.length)throw new Error('Must configure at least one billing slab.');const sorted=[...form.slabs].sort((a,b)=>a.limitKL-b.limitKL);if(sorted.some((s,i)=>!Number.isFinite(s.limitKL)||s.limitKL<=0||s.ratePerKL<0||(i>0&&s.limitKL<=sorted[i-1].limitKL)))throw new Error('Slab limits must be positive and strictly increasing, with non-negative rates.');if(sorted[sorted.length-1].limitKL!==999999)throw new Error('The final slab must be the unlimited slab.')}await saveBillingConfig({month:selectedMonth,...form});refresh()}catch(e){alert(e instanceof Error?e.message:'Save failed')}finally{setSaving(false)}}
+ if(loading)return <LoadingSpinner/>
+ const previews=[5,15,25].map(value=>({value,result:calculateSlabWaterCharge(value,form.slabs)}))
+ return <div><PageHeader title="Billing Configuration" description={`Tanker & rate setup for ${formatMonthLabel(selectedMonth)}`}/>
+ {procurement&&procurement.totalTankers>0&&<div className="mb-6 flex items-start gap-3 rounded-2xl bg-sky-50 p-4 ring-1 ring-sky-100"><Truck className="mt-0.5 h-5 w-5 text-sky-600"/><div className="text-sm text-sky-900"><p className="font-medium">Linked to Tanker Procurement</p><p className="mt-1 text-sky-700">{procurement.totalTankers} tankers delivered · {formatLiters(procurement.totalLiters)} · {formatCurrency(procurement.totalCost)} total cost. <Link to="/procurement" className="font-medium underline">View procurement</Link></p></div></div>}
+ <div className="grid gap-6 lg:grid-cols-2"><div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200/80"><div className="mb-6 flex items-center justify-between border-b border-slate-100 pb-4"><h2 className="text-sm font-semibold text-slate-900">Monthly Configuration</h2><div className="flex rounded-xl border border-slate-200 p-0.5 text-xs font-medium"><button disabled={locked} onClick={()=>setForm(f=>({...f,billingMode:'fixed'}))} className={`rounded-lg px-3 py-1.5 ${form.billingMode==='fixed'?'bg-sky-500 text-white':'text-slate-600'}`}>Fixed Rate</button><button disabled={locked} onClick={()=>setForm(f=>({...f,billingMode:'slab'}))} className={`rounded-lg px-3 py-1.5 ${form.billingMode==='slab'?'bg-sky-500 text-white':'text-slate-600'}`}>Tiered Slabs</button></div></div>
+ {locked&&<p className="mb-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-700">This month is locked. Configuration cannot be edited.</p>}
+ {form.billingMode==='fixed'?<div className="space-y-4">{[['tankerCapacityLiters','Tanker Capacity (L)'],['tankerCost','Cost Per Tanker (₹)'],['tankerCount','Tanker Count'],['maintenanceSurcharge','Maintenance Surcharge (₹)']].map(([key,label])=><div key={key}><label className="mb-1.5 block text-sm font-medium text-slate-700">{label}</label><input type="number" disabled={locked} value={form[key as keyof typeof form] as number} onChange={e=>setForm(f=>({...f,[key]:Number(e.target.value)}))} className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm disabled:bg-slate-50"/></div>)}</div>:<div className="space-y-5"><div><label className="mb-1.5 block text-sm font-medium text-slate-700">Maintenance Surcharge (₹)</label><input type="number" disabled={locked} value={form.maintenanceSurcharge} onChange={e=>setForm(f=>({...f,maintenanceSurcharge:Number(e.target.value)}))} className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm disabled:bg-slate-50"/></div><div><div className="mb-3 flex items-center justify-between"><label className="flex items-center gap-1.5 text-sm font-medium text-slate-700"><Layers className="h-4 w-4 text-sky-500"/>Water Slabs</label>{!locked&&<button type="button" onClick={addSlab} className="inline-flex items-center gap-1 text-xs font-semibold text-sky-600"><Plus className="h-3.5 w-3.5"/>Add Slab</button>}</div><div className="space-y-2">{form.slabs.map((slab,i)=>{const last=i===form.slabs.length-1;return <div key={i} className="flex items-center gap-2 rounded-xl border border-slate-100 bg-slate-50 p-3"><span className="w-14 text-xs font-bold text-slate-400">#{i+1}</span>{last?<span className="w-24 rounded-lg bg-slate-100 px-3 py-2 text-center text-sm font-semibold">∞ kL</span>:<input type="number" disabled={locked} value={slab.limitKL} onChange={e=>updateSlab(i,'limitKL',Number(e.target.value))} className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-center text-sm"/>}<span className="text-xs text-slate-500">@</span><input type="number" disabled={locked} value={slab.ratePerKL} onChange={e=>updateSlab(i,'ratePerKL',Number(e.target.value))} className="w-24 rounded-lg border border-slate-200 px-3 py-1.5 text-right text-sm"/><span className="text-xs text-slate-500">₹/kL</span>{!locked&&<button type="button" onClick={()=>deleteSlab(i)} className="ml-auto p-1.5 text-slate-400 hover:text-rose-600"><Trash2 className="h-4 w-4"/></button>}</div>})}</div></div></div>}
+ {!locked&&<button disabled={saving} onClick={()=>void handleSave()} className="mt-6 inline-flex items-center gap-2 rounded-xl bg-sky-500 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60"><Save className="h-4 w-4"/>{saving?'Saving...':'Save Configuration'}</button>}</div>
+ <div className="space-y-6"><div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200/80"><h2 className="mb-4 font-semibold text-slate-900">{form.billingMode==='fixed'?'Billing Formula Preview':'Slabs Calculation Preview'}</h2>{form.billingMode==='fixed'?<div className="space-y-4 rounded-xl bg-slate-50 p-5 text-sm"><p>Total Water Cost <strong>{formatCurrency(liveTotalCost)}</strong></p><p>Society Consumption <strong>{totalKL.toFixed(2)} kL</strong></p><p>Effective Rate <strong>{formatCurrency(liveFixedRate)}/kL</strong></p><p className="text-slate-500">Resident Consumption × Effective Rate</p></div>:<div className="space-y-3">{previews.map(({value,result})=><div key={value} className="rounded-xl border border-slate-100 bg-slate-50 p-4"><div className="flex items-center justify-between"><span className="font-semibold text-slate-800">{value} kL</span><span className="font-bold text-sky-600">{formatCurrency(result.charge)}</span></div><div className="mt-2 space-y-1 text-xs text-slate-500">{result.breakdown.filter(b=>b.consumptionInSlabKL>0).map(b=><div key={b.slabIndex} className="flex justify-between"><span>Slab {b.slabIndex}: {b.consumptionInSlabKL.toFixed(2)} kL × ₹{b.ratePerKL}</span><span>{formatCurrency(b.charge)}</span></div>)}</div></div>)}</div>}</div></div></div></div>
 }
