@@ -1,6 +1,6 @@
 import { cacheInvalidate } from '@/lib/cache'
 import { isFirebaseConfigured } from '@/lib/firebase'
-import { persistentCacheDelete, persistentCacheGet, persistentCacheSet, PersistentCacheTTL } from '@/services/persistentCache'
+import { persistentCacheDelete, persistentCacheDeletePrefix, persistentCacheGet, persistentCacheSet, PersistentCacheTTL } from '@/services/persistentCache'
 import { dataStore } from '@/services/dataStore'
 import { getNextMonth } from '@/lib/billing'
 import type { ExpenseCategory, ExpenseSnapshotData, FundCollection, MonthlyExpenseProvision, SocietyExpense } from '@/types'
@@ -24,7 +24,7 @@ export async function saveExpense(input: { month: string; expenseDate: string; c
   const description = input.description.trim()
   if (!description) throw new Error('A description is required.')
   if (!Number.isFinite(input.amount) || input.amount <= 0) throw new Error('Enter an amount greater than zero.')
-  const existing = existingId ? (await dataStore.getExpenses()).find((item) => item.id === existingId) : undefined
+  const existing = existingId ? (await dataStore.getExpenses(input.month)).find((item) => item.id === existingId) : undefined
   if (existingId && !existing) throw new Error('Expense not found.')
   const now = new Date().toISOString()
   const expense: SocietyExpense = { id: existingId ?? crypto.randomUUID(), ...input, description, vendor: input.vendor?.trim() || undefined, referenceNumber: input.referenceNumber?.trim() || undefined, notes: input.notes?.trim() || undefined, createdAt: existing?.createdAt ?? now, updatedAt: now }
@@ -74,7 +74,7 @@ export async function saveFundCollection(input: { billingMonth: string; collecte
 
 export async function deleteFundCollection(id: string): Promise<void> {
   await dataStore.deleteFundCollection(id)
-  // Collection id is not enough to invalidate a month key; callers that reload the month will naturally repopulate it after TTL.
+  await persistentCacheDeletePrefix('fund-collections:')
 }
 
 export function calculateFundCollectionTotal(collections: FundCollection[]): number { return collections.reduce((total, collection) => total + collection.amount, 0) }
@@ -87,14 +87,7 @@ export async function moveProvisioningMonth(fromMonth: string, toMonth: string):
     await dataStore.upsertExpenseProvision({ ...provision, id: toMonth, billingMonth: toMonth, carryForwardMonth: provision.carryForwardMonth === getNextMonth(fromMonth) ? getNextMonth(toMonth) : provision.carryForwardMonth, updatedAt: new Date().toISOString() })
     await dataStore.deleteExpenseProvision(fromMonth)
   }
-  await Promise.all([
-    persistentCacheDelete(expenseKey(fromMonth)),
-    persistentCacheDelete(expenseKey(toMonth)),
-    persistentCacheDelete(collectionsKey(fromMonth)),
-    persistentCacheDelete(collectionsKey(toMonth)),
-    persistentCacheDelete(provisionKey(fromMonth)),
-    persistentCacheDelete(provisionKey(toMonth)),
-  ])
+  await Promise.all([persistentCacheDelete(expenseKey(fromMonth)), persistentCacheDelete(expenseKey(toMonth)), persistentCacheDelete(collectionsKey(fromMonth)), persistentCacheDelete(collectionsKey(toMonth)), persistentCacheDelete(provisionKey(fromMonth)), persistentCacheDelete(provisionKey(toMonth))])
 }
 
 export async function deleteExpense(id: string): Promise<void> {
