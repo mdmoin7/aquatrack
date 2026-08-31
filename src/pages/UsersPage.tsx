@@ -12,10 +12,7 @@ import { getAuthErrorMessage } from '@/lib/authErrors'
 
 const ADMIN_ROLES: UserRole[] = ['admin', 'resident', 'guest', 'meter_reader', 'tanker_operator']
 const SUPERADMIN_ROLES: UserRole[] = ['superadmin', 'admin', 'resident', 'guest', 'meter_reader', 'tanker_operator']
-
-const ROLE_LABELS: Record<UserRole, string> = {
-  admin: 'Admin', resident: 'Resident', guest: 'Guest', superadmin: 'Super Admin', meter_reader: 'Meter Reader', tanker_operator: 'Tanker Operator',
-}
+const ROLE_LABELS: Record<UserRole, string> = { admin: 'Admin', resident: 'Resident', guest: 'Guest', superadmin: 'Super Admin', meter_reader: 'Meter Reader', tanker_operator: 'Tanker Operator' }
 
 export function UsersPage() {
   const { user: currentUser } = useAuth()
@@ -26,7 +23,6 @@ export function UsersPage() {
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState({ id: '', email: '', displayName: '', role: 'resident' as UserRole, flatId: '', assignedBlocks: [] as BlockId[] })
-
   const isSuperAdmin = currentUser?.role === 'superadmin'
   const roleOptions = isSuperAdmin ? SUPERADMIN_ROLES : ADMIN_ROLES
 
@@ -45,6 +41,7 @@ export function UsersPage() {
     setError('')
     try {
       if (!isSuperAdmin && form.role === 'superadmin') throw new Error('Only super admins can assign the superadmin role.')
+      if (form.role === 'resident' && !form.flatId) throw new Error('A flat must be assigned to every resident.')
       if (editingId) {
         const target = users.find((u) => u.id === editingId)
         if (target?.role === 'superadmin' && !isSuperAdmin) throw new Error('Only super admins can modify super admin accounts.')
@@ -71,7 +68,14 @@ export function UsersPage() {
     <PageHeader title="User Management" description="Manage society user profiles, roles, and flat assignments" actions={<button type="button" onClick={openCreate} className="inline-flex items-center gap-2 rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-600"><Plus className="h-4 w-4" />Add User Profile</button>} />
     <div className="mb-6 flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600"><Users className="mt-0.5 h-5 w-5 shrink-0 text-slate-400" /><div><p className="font-medium text-slate-800">How to add residents</p><ol className="mt-1 list-inside list-decimal space-y-1"><li>Create the account in Firebase Console → Authentication, or have them register.</li><li>Copy their User UID from Firebase Console.</li><li>Add a profile here with the appropriate role and flat assignment.</li></ol></div></div>
     {error && <div className="mb-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</div>}
-    {showForm && <div className="mb-6 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200/80"><h3 className="mb-4 font-semibold text-slate-900">{editingId ? 'Edit user profile' : 'New user profile'}</h3><div className="grid gap-4 sm:grid-cols-2"><label className="block"><span className="mb-1 block text-sm font-medium text-slate-700">Firebase User ID</span><input value={form.id} disabled={Boolean(editingId)} onChange={(e) => setForm({ ...form, id: e.target.value })} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" /></label><label className="block"><span className="mb-1 block text-sm font-medium text-slate-700">Email</span><input type="email" value={form.email} disabled={Boolean(editingId)} onChange={(e) => setForm({ ...form, email: e.target.value })} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" /></label><label className="block"><span className="mb-1 block text-sm font-medium text-slate-700">Display Name</span><input value={form.displayName} onChange={(e) => setForm({ ...form, displayName: e.target.value })} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" /></label><label className="block"><span className="mb-1 block text-sm font-medium text-slate-700">Role</span><select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as UserRole })} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">{roleOptions.map((role) => <option key={role} value={role}>{ROLE_LABELS[role]}</option>)}</select></label></div><div className="mt-5 flex gap-2"><button type="button" onClick={handleSave} className="rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-600">Save</button><button type="button" onClick={resetForm} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700">Cancel</button></div></div>}
+    {showForm && <div className="mb-6 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200/80"><h3 className="mb-4 font-semibold text-slate-900">{editingId ? 'Edit user profile' : 'New user profile'}</h3><div className="grid gap-4 sm:grid-cols-2">
+      <label className="block"><span className="mb-1 block text-sm font-medium text-slate-700">Firebase User ID</span><input value={form.id} disabled={Boolean(editingId)} onChange={(e) => setForm({ ...form, id: e.target.value })} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" /></label>
+      <label className="block"><span className="mb-1 block text-sm font-medium text-slate-700">Email</span><input type="email" value={form.email} disabled={Boolean(editingId)} onChange={(e) => setForm({ ...form, email: e.target.value })} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" /></label>
+      <label className="block"><span className="mb-1 block text-sm font-medium text-slate-700">Display Name</span><input value={form.displayName} onChange={(e) => setForm({ ...form, displayName: e.target.value })} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" /></label>
+      <label className="block"><span className="mb-1 block text-sm font-medium text-slate-700">Role</span><select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as UserRole, flatId: e.target.value === 'resident' ? form.flatId : form.flatId })} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">{roleOptions.map((role) => <option key={role} value={role}>{ROLE_LABELS[role]}</option>)}</select></label>
+      {(form.role === 'resident' || form.role === 'admin' || form.role === 'superadmin') && <label className="block"><span className="mb-1 block text-sm font-medium text-slate-700">Flat {form.role === 'resident' ? <span className="text-rose-500">*</span> : '(optional)'}</span><select value={form.flatId} onChange={(e) => setForm({ ...form, flatId: e.target.value })} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"><option value="">— {form.role === 'resident' ? 'Select flat' : 'None'} —</option>{flats.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}</select></label>}
+      {form.role === 'meter_reader' && <div className="sm:col-span-2"><label className="mb-2 block text-sm font-medium text-slate-700">Assigned blocks</label><div className="flex flex-wrap gap-3">{(Object.keys(BLOCK_LABELS) as BlockId[]).map((block) => <label key={block} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm"><input type="checkbox" checked={form.assignedBlocks.includes(block)} onChange={(e) => setForm({ ...form, assignedBlocks: e.target.checked ? [...form.assignedBlocks, block] : form.assignedBlocks.filter((b) => b !== block) })} />{BLOCK_LABELS[block]}</label>)}</div></div>}
+    </div><div className="mt-5 flex gap-2"><button type="button" onClick={handleSave} className="rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-600">Save</button><button type="button" onClick={resetForm} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700">Cancel</button></div></div>}
     <DataTable columns={columns} data={users} pagination highlightOnHover responsive />
   </div>
 }
