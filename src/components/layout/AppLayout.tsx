@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { BarChart3, Bell, Building2, ChevronDown, ClipboardList, Database, Droplets, FileText, Gauge, LayoutDashboard, LogOut, Menu, ReceiptText, RefreshCw, Settings, Truck, User, Users, X } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { useAppContext } from '@/context/AppContext'
@@ -45,7 +45,6 @@ export function AppLayout() {
   const { selectedMonth, setSelectedMonth, refresh } = useAppContext()
   const { unreadCount } = useNotifications()
   const navigate = useNavigate()
-  const location = useLocation()
   const months = getPreviousMonths(12)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [quickAddingTanker, setQuickAddingTanker] = useState(false)
@@ -92,7 +91,7 @@ export function AppLayout() {
               <p className="truncate text-sm font-medium text-slate-700 sm:hidden">{formatMonthLabel(selectedMonth)}</p>
             </div>
             <div className="flex w-full items-center gap-2 sm:w-auto">
-              {location.pathname === '/procurement' && user?.role !== 'guest' && user?.role !== 'resident' && user?.role !== 'meter_reader' && (
+              {user?.role !== 'guest' && user?.role !== 'resident' && user?.role !== 'meter_reader' && (
                 <button type="button" onClick={() => void handleQuickTanker()} disabled={quickAddingTanker} className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-emerald-500 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-600 disabled:cursor-wait disabled:opacity-60" title="Add one delivered tanker using the active vendor defaults"><Truck className="h-4 w-4" />{quickAddingTanker ? 'Adding...' : 'Quick Tanker'}</button>
               )}
               <div className="relative w-full sm:w-auto"><select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="w-full appearance-none rounded-xl border border-slate-200 bg-white py-2 pl-4 pr-10 text-sm font-medium text-slate-700 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100 sm:w-auto">{months.map((m) => <option key={m} value={m}>{formatMonthLabel(m)}</option>)}</select><ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /></div>
