@@ -7,7 +7,7 @@ const STORE_NAME = "cache";
 const DB_VERSION = 2;
 
 const DEFAULT_CONFIG: CacheConfig = {
-  ttlMs: 500 * 60 * 1000,
+  ttlMs: 5000 * 60 * 1000,
   useIndexedDB: true,
 };
 
