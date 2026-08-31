@@ -14,6 +14,12 @@ export interface SocietyStats { month:string; totalConsumptionKL:number; totalCo
 export type AlertType='consumption_spike'|'sudden_drop'|'meter_reset'|'leakage_suspicion'|'unusual_usage'|'month_end_reading'|'tanker_procurement_update'
 export type AlertAudience='flat'|'superadmin'
 export interface Alert { id:string; flatId:string; flatLabel:string; type:AlertType; message:string; severity:'low'|'medium'|'high'; month:string; createdAt:string; acknowledged:boolean; audience?:AlertAudience }
+export interface FlatAnalyticsSpike { month:string; percentIncrease:number }
+export interface FlatAnalyticsTimeline { month:string; consumptionKL:number; bill:number }
+export interface FlatAnalytics { flat:Flat; month:string; currentConsumptionKL:number; rolling3MonthAvgKL:number; societyAvgKL:number; blockAvgKL:number; estimatedBill:number; estimatedTankers:number; efficiencyScore:number; timeline:FlatAnalyticsTimeline[]; spikes:FlatAnalyticsSpike[]; anomalies:Alert[] }
+export interface InvoiceRow { block:BlockId; unit:string; chargeType:string; chargeDescription:string; chargeDate:string; payByDate:string; amount:number }
+export interface CacheConfig { ttlMs:number; useIndexedDB:boolean }
+export interface CacheEntry<T=unknown> { key:string; data:T; createdAt:number; expiresAt:number }
 export type TankerOrderStatus='planned'|'ordered'|'delivered'|'cancelled'
 export interface TankerVendor { id:string; name:string; contactPerson:string; phone:string; defaultCapacityLiters:number; defaultCostPerTanker:number; active:boolean }
 export interface TankerDelivery { id:string; month:string; deliveryDate:string; vendorId:string; vendorName:string; tankerCount:number; capacityLiters:number; costPerTanker:number; totalLiters:number; totalCost:number; invoiceNumber?:string; vehicleSnapshotUrl?:string; status:TankerOrderStatus; notes?:string; orderedBy:string; createdAt:string; updatedAt:string }
