@@ -1,4 +1,4 @@
-export type UserRole = 'admin'|'resident'|'guest'|'superadmin'|'meter_reader'
+export type UserRole = 'admin'|'resident'|'guest'|'superadmin'|'meter_reader'|'tanker_operator'
 export type BlockId = 'A'|'B'|'C'|'COMMON'
 export interface User { id:string; email:string; displayName:string; role:UserRole; flatId?:string; societyId?:string; assignedBlocks?:BlockId[] }
 export interface Flat { id:string; block:BlockId; unit:string; label:string }
@@ -14,12 +14,12 @@ export interface SocietyStats { month:string; totalConsumptionKL:number; totalCo
 export type AlertType='consumption_spike'|'sudden_drop'|'meter_reset'|'leakage_suspicion'|'unusual_usage'|'month_end_reading'|'tanker_procurement_update'
 export type AlertAudience='flat'|'superadmin'
 export interface Alert { id:string; flatId:string; flatLabel:string; type:AlertType; message:string; severity:'low'|'medium'|'high'; month:string; createdAt:string; acknowledged:boolean; audience?:AlertAudience }
-export interface FlatAnalytics { flat:Flat; month:string; currentConsumptionKL:number; rolling3MonthAvgKL:number; societyAvgKL:number; blockAvgKL:number; estimatedBill:number; estimatedTankers:number; efficiencyScore:number; timeline:Array<{month:string;consumptionKL:number;bill:number}>; spikes:Array<{month:string;percentIncrease:number}>; anomalies:Alert[] }
-export interface InvoiceRow { block:string; unit:string; chargeType:string; chargeDescription:string; chargeDate:string; payByDate:string; amount:number }
-export interface CacheEntry<T=unknown> { key:string; data:T; expiresAt:number; createdAt:number }
+export interface FlatAnalyticsSpike { month:string; percentIncrease:number }
+export interface FlatAnalyticsTimeline { month:string; consumptionKL:number; bill:number }
+export interface FlatAnalytics { flat:Flat; month:string; currentConsumptionKL:number; rolling3MonthAvgKL:number; societyAvgKL:number; blockAvgKL:number; estimatedBill:number; estimatedTankers:number; efficiencyScore:number; timeline:FlatAnalyticsTimeline[]; spikes:FlatAnalyticsSpike[]; anomalies:Alert[] }
+export interface InvoiceRow { block:BlockId; unit:string; chargeType:string; chargeDescription:string; chargeDate:string; payByDate:string; amount:number }
 export interface CacheConfig { ttlMs:number; useIndexedDB:boolean }
-export const BLOCK_LABELS:Record<BlockId,string>={A:'Block A',B:'Block B',C:'Block C',COMMON:'Common / Pool'}
-export const ALERT_LABELS:Record<AlertType,string>={consumption_spike:'Consumption Spike',sudden_drop:'Sudden Drop',meter_reset:'Meter Reset',leakage_suspicion:'Leakage Suspicion',unusual_usage:'Unusual Usage',month_end_reading:'Month-End Reading',tanker_procurement_update:'Tanker Procurement Update'}
+export interface CacheEntry<T=unknown> { key:string; data:T; createdAt:number; expiresAt:number }
 export type TankerOrderStatus='planned'|'ordered'|'delivered'|'cancelled'
 export interface TankerVendor { id:string; name:string; contactPerson:string; phone:string; defaultCapacityLiters:number; defaultCostPerTanker:number; active:boolean }
 export interface TankerDelivery { id:string; month:string; deliveryDate:string; vendorId:string; vendorName:string; tankerCount:number; capacityLiters:number; costPerTanker:number; totalLiters:number; totalCost:number; invoiceNumber?:string; vehicleSnapshotUrl?:string; status:TankerOrderStatus; notes?:string; orderedBy:string; createdAt:string; updatedAt:string }
@@ -30,4 +30,6 @@ export interface SocietyExpense { id:string; month:string; expenseDate:string; c
 export interface ExpenseSnapshotData { cutoffDate:string; generatedAt:string; collectedTotal:number; expenseTotal:number; carriedForward:number; surplus:number; categories:Array<{category:ExpenseCategory;amount:number}>; residentNote?:string; collectionMonth:string; paymentMonth:string }
 export interface MonthlyExpenseProvision { id:string; billingMonth:string; collectionMonth:string; paymentMonth:string; residentNote?:string; updatedBy:string; updatedAt:string; snapshotGeneratedAt?:string; snapshotCutoffDate?:string; snapshotData?:ExpenseSnapshotData; snapshotPublishedAt?:string; snapshotPublishedBy?:string; surplusCarriedForward?:number; carryForwardMonth?:string }
 export interface FundCollection { id:string; billingMonth:string; collectedDate:string; amount:number; source:string; referenceNumber?:string; notes?:string; recordedBy:string; createdAt:string }
+export const BLOCK_LABELS:Record<BlockId,string>={A:'Block A',B:'Block B',C:'Block C',COMMON:'Common / Pool'}
+export const ALERT_LABELS:Record<AlertType,string>={consumption_spike:'Consumption Spike',sudden_drop:'Sudden Drop',meter_reset:'Meter Reset',leakage_suspicion:'Leakage Suspicion',unusual_usage:'Unusual Usage',month_end_reading:'Month-End Reading',tanker_procurement_update:'Tanker Procurement Update'}
 export const EXPENSE_CATEGORY_LABELS:Record<ExpenseCategory,string>={water_tankers:'Water Tankers',electricity:'Electricity',lift_maintenance:'Lift',dg_generator:'DG Generator',utilities:'Utilities',repairs_maintenance:'Repairs & Maintenance',security:'Security',housekeeping:'Housekeeping',staff_salaries:'Vendor Payments',administration:'Administration',amenities:'Amenities',insurance_taxes:'Insurance & Taxes',other:'Other'}
