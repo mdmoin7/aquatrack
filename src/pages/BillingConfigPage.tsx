@@ -41,7 +41,7 @@ export function BillingConfigPage() {
     tankerCapacityLiters: DEFAULT_TANKER_CAPACITY_LITERS,
     tankerCost: DEFAULT_TANKER_COST_PER_TANKER,
     tankerCount: 0,
-    maintenanceSurcharge: 5000,
+    maintenanceSurcharge: 0,
     billingMode: "fixed" as "fixed" | "slab",
     slabs: cloneDefaultSlabs(),
   });
