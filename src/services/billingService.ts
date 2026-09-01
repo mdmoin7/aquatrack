@@ -42,13 +42,19 @@ export async function generateAndLockFlatBills(month:string,userId:string):Promi
 
 export async function getSocietyStats(month:string):Promise<SocietyStats>{
   const cached=await cacheGet<SocietyStats>(CacheKeys.dashboard(month));if(cached)return cached
-  const [flats,summaries,config,bills]=await Promise.all([getFlats(),getMonthlySummaries(month),getBillingConfig(month),getFlatBills(month)])
+  const [flats,summaries,config,bills,deliveries]=await Promise.all([getFlats(),getMonthlySummaries(month),getBillingConfig(month),getFlatBills(month),dataStore.getTankerDeliveries(month)])
   const totalConsumptionKL=summaries.reduce((sum,s)=>sum+s.consumptionKL,0)
-  const totalWaterCost=config?.billingMode==='slab'?bills.reduce((sum,b)=>sum+b.waterCharge,0):(config?calculateTotalWaterCost(config):0)
+  // Dashboard Water Cost represents actual tanker procurement cost only.
+  // Maintenance surcharge is a separate billing component and must not be
+  // included in this KPI. Use delivered records as the source of truth so a
+  // vendor's actual cost is reflected even when the billing config is stale.
+  const deliveredTankerDeliveries=deliveries.filter((delivery)=>delivery.status==='delivered')
+  const tankerCount=deliveredTankerDeliveries.reduce((sum,delivery)=>sum+delivery.tankerCount,0)
+  const totalWaterCost=deliveredTankerDeliveries.reduce((sum,delivery)=>sum+delivery.totalCost,0)
   const effectiveRate=totalConsumptionKL>0?Math.round((totalWaterCost/totalConsumptionKL)*100)/100:0
   const topConsumers=bills.slice().sort((a,b)=>b.consumptionKL-a.consumptionKL).slice(0,5).map(b=>({flat:b.flat,consumptionKL:b.consumptionKL}))
   const daysInMonth=30;const dailyPerDay=totalConsumptionKL>0?totalConsumptionKL/daysInMonth:0;const dailyTrend=Array.from({length:daysInMonth},(_,i)=>({date:`${month}-${String(i+1).padStart(2,'0')}`,consumptionKL:Math.round(dailyPerDay*100)/100}))
-  const stats={month,totalConsumptionKL,totalConsumptionLiters:totalConsumptionKL*1000,totalWaterCost,effectiveRatePerKL:effectiveRate,blockConsumption:groupReadingsByBlock(summaries,flats),topConsumers,dailyTrend,tankerCount:config?.tankerCount??0,flatCount:flats.length};await cacheSet(CacheKeys.dashboard(month),stats);return stats
+  const stats={month,totalConsumptionKL,totalConsumptionLiters:totalConsumptionKL*1000,totalWaterCost,effectiveRatePerKL:effectiveRate,blockConsumption:groupReadingsByBlock(summaries,flats),topConsumers,dailyTrend,tankerCount,flatCount:flats.length};await cacheSet(CacheKeys.dashboard(month),stats);return stats
 }
 
 export async function getFlatBillHistory(flatId:string):Promise<FlatBill[]>{const months=getPreviousMonths(12);const results:FlatBill[]=[];for(const month of months){const bills=await getFlatBills(month);const bill=bills.find(b=>b.flatId===flatId);if(bill)results.push(bill)}return results}
