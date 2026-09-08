@@ -966,6 +966,6 @@ function createSnapshotCanvas(data: {
   ctx.fillStyle = "#94a3b8";
   ctx.font = "400 18px system-ui, sans-serif";
 
-  ctx.fillText(`Generated ${data.generatedAt}  ·  AquaTrack`, pad, height - 36);
+  ctx.fillText(`Generated ${data.generatedAt}`, pad, height - 36);
   return canvas;
 }
