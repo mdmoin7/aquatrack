@@ -207,26 +207,63 @@ export function ExpenseSnapshotPage() {
   };
   const generateSnapshot = async () => {
     if (!provision) return;
-    const latestCollectionDate = fundCollections[0]?.collectedDate;
-    if (!latestCollectionDate) {
+
+    // A snapshot is a point-in-time view of the complete ledger that is
+    // available through the latest business event. Using only the latest
+    // fund-collection date here caused expenses recorded after that date to be
+    // silently excluded from the generated snapshot even though they were
+    // present in the expense register.
+    const latestCollectionDate = fundCollections.reduce<string | undefined>(
+      (latest, item) =>
+        !latest || item.collectedDate > latest ? item.collectedDate : latest,
+      undefined,
+    );
+    const latestExpenseDate = expenses.reduce<string | undefined>(
+      (latest, item) =>
+        !latest || item.expenseDate > latest ? item.expenseDate : latest,
+      undefined,
+    );
+    const cutoffDate = [latestCollectionDate, latestExpenseDate]
+      .filter((date): date is string => Boolean(date))
+      .sort()
+      .at(-1);
+
+    if (!cutoffDate) {
       setNotice(
-        "Record at least one funds-collected entry before generating a snapshot.",
+        "Record at least one funds-collected entry or expense before generating a snapshot.",
       );
       return;
     }
+
     setSaving(true);
     try {
-      const cutoffDate = latestCollectionDate;
+      const snapshotExpensesForGeneration = expenses.filter(
+        (item) => item.expenseDate <= cutoffDate,
+      );
+      const snapshotCollectionsForGeneration = fundCollections.filter(
+        (item) => item.collectedDate <= cutoffDate,
+      );
+      const snapshotExpenseTotal = calculateExpenseTotal(
+        snapshotExpensesForGeneration,
+      );
+      const snapshotCollectedTotal = calculateFundCollectionTotal(
+        snapshotCollectionsForGeneration,
+      );
+      const snapshotCategories = groupExpensesByCategory(
+        snapshotExpensesForGeneration,
+      );
+      const snapshotAvailableFunds = snapshotCollectedTotal + carriedForward;
+      const snapshotSurplus = snapshotAvailableFunds - snapshotExpenseTotal;
       const generatedAt = new Date().toISOString();
-      const surplusCarriedForward = Math.max(0, surplus);
+      const surplusCarriedForward = Math.max(0, snapshotSurplus);
       const snapshotData: ExpenseSnapshotData = {
         cutoffDate,
         generatedAt,
-        collectedTotal,
-        expenseTotal,
+        collectedTotal: snapshotCollectedTotal,
+        expenseTotal: snapshotExpenseTotal,
         carriedForward,
-        surplus,
-        categories: categories.map((item) => ({
+        surplus: snapshotSurplus,
+        categories: snapshotCategories.map((item) => ({
           category: item.category,
           amount: item.amount,
         })),
@@ -251,7 +288,7 @@ export function ExpenseSnapshotPage() {
       await saveExpenseProvision(updatedProvision);
       setProvision(updatedProvision);
       setNotice(
-        `Snapshot generated through the latest funds-collected date: ${new Date(`${cutoffDate}T00:00:00`).toLocaleDateString("en-IN")}.`,
+        `Snapshot generated through ${new Date(`${cutoffDate}T00:00:00`).toLocaleDateString("en-IN")}; all expenses dated on or before that date are included.`,
       );
       refresh();
     } finally {
@@ -436,64 +473,41 @@ export function ExpenseSnapshotPage() {
           </p>
         </div>
 
-        {snapshotGenerated && provision.snapshotData && (
-          <p className="text-xs text-slate-500">
-            Data through{" "}
-            <span className="font-medium text-slate-700">
-              {new Date(
-                `${provision.snapshotData.cutoffDate}T00:00:00`,
-              ).toLocaleDateString("en-IN")}
-            </span>
-          </p>
-        )}
+        <div className="flex flex-col gap-2 text-right text-xs text-slate-500 sm:items-end">
+          <span>
+            {cutoff
+              ? `Expense cutoff: ${new Date(
+                  `${cutoff}T00:00:00`,
+                ).toLocaleDateString("en-IN")}`
+              : "No snapshot cutoff set"}
+          </span>
+          {snapshotPublished && provision.snapshotPublishedBy && (
+            <span>Published by {provision.snapshotPublishedBy}</span>
+          )}
+        </div>
       </div>
-      <div className="mb-6 rounded-2xl border border-sky-100 bg-sky-50 p-5 text-sm text-sky-900">
-        <p className="font-semibold">
-          {formatMonthLabel(selectedMonth)} expenses ·{" "}
-          {formatMonthLabel(provision.collectionMonth)} collections ·{" "}
-          {formatMonthLabel(provision.paymentMonth)} vendor settlement
-          {cutoff
-            ? ` · snapshot through ${new Date(`${cutoff}T00:00:00`).toLocaleDateString("en-IN")}`
-            : ""}
-          .
-        </p>
-        <p className="mt-1 text-sky-800">
-          The balance combines all expenses attributed to{" "}
-          {formatMonthLabel(selectedMonth)} with funds recorded against that
-          same billing month, even when collections happen in{" "}
-          {formatMonthLabel(provision.collectionMonth)}. Generate Snapshot locks
-          the resident-facing image data until it is regenerated.
-        </p>
-      </div>
+
       <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
-          title="Funds Collected"
+          title="Funds collected"
           value={formatCurrency(collectedTotal)}
-          subtitle={
-            collectionTotal
-              ? `${formatCurrency(collectionTotal)} billed`
-              : `Scheduled for ${formatMonthLabel(provision.collectionMonth)}`
-          }
+          subtitle={`Through ${cutoff ? new Date(`${cutoff}T00:00:00`).toLocaleDateString("en-IN") : "latest record"}`}
           icon={WalletCards}
-          accent="emerald"
+          accent="sky"
         />
         <StatCard
-          title="Prior Surplus"
-          value={formatCurrency(carriedForward)}
-          subtitle={
-            carriedForward
-              ? `From ${formatMonthLabel(getPreviousMonth(selectedMonth))}`
-              : "No carried balance"
-          }
-          icon={WalletCards}
-          accent="violet"
-        />
-        <StatCard
-          title="Vendor Payments"
+          title="Expenses"
           value={formatCurrency(expenseTotal)}
-          subtitle={`Scheduled / paid in ${formatMonthLabel(provision.paymentMonth)}`}
+          subtitle={`${snapshotExpenses.length} included item${snapshotExpenses.length === 1 ? "" : "s"}`}
           icon={IndianRupee}
           accent="rose"
+        />
+        <StatCard
+          title="Prior surplus"
+          value={formatCurrency(carriedForward)}
+          subtitle="Carried into this billing month"
+          icon={WalletCards}
+          accent="violet"
         />
         <StatCard
           title={surplus >= 0 ? "Surplus" : "Shortfall"}
