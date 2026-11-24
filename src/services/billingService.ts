@@ -164,6 +164,7 @@ export async function computeFlatBills(month: string): Promise<FlatBill[]> {
         effectiveRate,
         totalKL,
       );
+      bill.meterSegments = summary.meterSegments;
       const blockAvg =
         blockCounts[flat.block] > 0
           ? (blockTotals[flat.block] ?? 0) / blockCounts[flat.block]

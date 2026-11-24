@@ -108,6 +108,15 @@ service cloud.firestore {
         allow write: if sameSociety(societyId) && isAdmin();
       }
 
+      match /meters/{meterId} {
+        allow read: if canReadSociety(societyId);
+        allow create, update: if sameSociety(societyId) && (
+          isAdmin() ||
+          meterReaderCanAccessFlat(societyId, request.resource.data.flatId)
+        );
+        allow delete: if sameSociety(societyId) && isAdmin();
+      }
+
       match /readings/{readingId} {
         allow read: if isGuestReader() || (sameSociety(societyId) && (
           canReadReading(societyId, resource.data.flatId)

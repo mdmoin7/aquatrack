@@ -1,16 +1,18 @@
 import { Calendar, Gauge, User } from 'lucide-react'
 import { formatKL, formatMonthLabel, litersToKL } from '@/lib/billing'
-import { groupReadingsByMonth } from '@/lib/readings'
-import type { MeterReading } from '@/types'
+import { groupReadingsByMonth, meterSerial } from '@/lib/readings'
+import type { MeterReading, WaterMeter } from '@/types'
 
 interface FlatReadingTimelineProps {
   entries: MeterReading[]
+  meters?: WaterMeter[]
   flatLabel?: string
   emptyMessage?: string
 }
 
 export function FlatReadingTimeline({
   entries,
+  meters = [],
   flatLabel,
   emptyMessage = 'No reading entries recorded yet.',
 }: FlatReadingTimelineProps) {
@@ -22,7 +24,7 @@ export function FlatReadingTimeline({
     )
   }
 
-  const groups = groupReadingsByMonth(entries)
+  const groups = groupReadingsByMonth(entries, meters)
 
   return (
     <div className="space-y-8">
@@ -30,7 +32,7 @@ export function FlatReadingTimeline({
         <p className="text-xs font-medium uppercase tracking-wide text-slate-400">{flatLabel}</p>
       )}
       {groups.map((group) => (
-        <MonthGroup key={group.month} group={group} />
+        <MonthGroup key={group.month} group={group} meters={meters} />
       ))}
     </div>
   )
@@ -38,8 +40,10 @@ export function FlatReadingTimeline({
 
 function MonthGroup({
   group,
+  meters,
 }: {
   group: ReturnType<typeof groupReadingsByMonth>[number]
+  meters: WaterMeter[]
 }) {
   return (
     <section>
@@ -54,8 +58,21 @@ function MonthGroup({
         <div className="text-xs text-slate-500">
           Monthly billable:{' '}
           <span className="font-semibold text-sky-700">{formatKL(group.monthlyConsumptionKL)}</span>
-          <span className="mx-1 text-slate-300">·</span>
-          {group.monthlyOpening.toLocaleString()} → {group.monthlyClosing.toLocaleString()} L
+          {group.meterSegments.length > 1 ? (
+            <span className="mt-1 block text-right">
+              {group.meterSegments.map((segment) => (
+                <span key={segment.meterId} className="block">
+                  {segment.serialNumber}: {segment.openingReading.toLocaleString()} →{' '}
+                  {segment.closingReading.toLocaleString()} L ({formatKL(segment.consumptionKL)})
+                </span>
+              ))}
+            </span>
+          ) : (
+            <>
+              <span className="mx-1 text-slate-300">·</span>
+              {group.monthlyOpening.toLocaleString()} → {group.monthlyClosing.toLocaleString()} L
+            </>
+          )}
         </div>
       </div>
 
@@ -66,6 +83,7 @@ function MonthGroup({
             entry={entry}
             entryNumber={group.entries.length - idx}
             isLast={idx === group.entries.length - 1}
+            meters={meters}
           />
         ))}
       </ol>
@@ -77,10 +95,12 @@ function TimelineEntry({
   entry,
   entryNumber,
   isLast,
+  meters,
 }: {
   entry: MeterReading
   entryNumber: number
   isLast: boolean
+  meters: WaterMeter[]
 }) {
   const date = new Date(entry.createdAt)
   const formattedDate = date.toLocaleDateString('en-IN', {
@@ -102,6 +122,10 @@ function TimelineEntry({
           <div className="flex items-center gap-2">
             <span className="rounded-lg bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-700">
               Entry #{entryNumber}
+            </span>
+            <span className="rounded-lg bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+              {meterSerial(entry.meterId, meters)}
+              {entry.entryKind === 'replacement_final' ? ' · final reading' : ''}
             </span>
             <span className="text-xs text-slate-400">
               {formattedDate} · {formattedTime}

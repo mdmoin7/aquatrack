@@ -1,4 +1,4 @@
-import type { Alert, AlertType, Flat, MeterReading } from '@/types'
+import type { Alert, AlertType, Flat, MeterConsumptionSegment, MeterReading } from '@/types'
 
 const SPIKE_THRESHOLD = 0.5
 const DROP_THRESHOLD = 0.4
@@ -39,6 +39,7 @@ export function generateAlertsForReading(
   flat: Flat,
   previousReading?: MeterReading,
   recentAverageKL?: number,
+  segments?: MeterConsumptionSegment[],
 ): Alert[] {
   const alerts: Alert[] = []
   const base = {
@@ -49,7 +50,21 @@ export function generateAlertsForReading(
     acknowledged: false,
   }
 
-  if (detectMeterReset(reading.openingReading, reading.closingReading, previousReading?.closingReading)) {
+  const sameMeterPreviousClosing =
+    previousReading?.meterId && reading.meterId && previousReading.meterId === reading.meterId
+      ? previousReading.closingReading
+      : undefined
+  const meterReset =
+    segments && segments.length > 1
+      ? segments.some((segment) =>
+          detectMeterReset(
+            segment.openingReading,
+            segment.closingReading,
+            segment.meterId === previousReading?.meterId ? previousReading?.closingReading : undefined,
+          ),
+        )
+      : detectMeterReset(reading.openingReading, reading.closingReading, sameMeterPreviousClosing)
+  if (meterReset) {
     alerts.push({
       ...base,
       id: `${reading.id}-reset`,

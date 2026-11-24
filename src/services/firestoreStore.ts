@@ -14,6 +14,7 @@ import type {
   BillingConfig,
   Flat,
   MeterReading,
+  WaterMeter,
   StoredFlatBill,
   TankerDelivery,
   TankerVendor,
@@ -86,10 +87,11 @@ export const firestoreStore = {
   },
 
   async clearSocietyCollections(): Promise<void> {
-    const [flats, readings, billingConfigs, flatBills, alerts, deliveries, vendors, expenses, provisions, collections] =
+    const [flats, readings, meters, billingConfigs, flatBills, alerts, deliveries, vendors, expenses, provisions, collections] =
       await Promise.all([
       getDocs(collection(db(), Collections.flats())),
       getDocs(collection(db(), Collections.readings())),
+      getDocs(collection(db(), Collections.meters())),
       getDocs(collection(db(), Collections.billingConfigs())),
       getDocs(collection(db(), Collections.flatBills())),
       getDocs(collection(db(), Collections.alerts())),
@@ -103,6 +105,7 @@ export const firestoreStore = {
     await Promise.all([
       ...flats.docs.map((d) => deleteDoc(d.ref)),
       ...readings.docs.map((d) => deleteDoc(d.ref)),
+      ...meters.docs.map((d) => deleteDoc(d.ref)),
       ...billingConfigs.docs.map((d) => deleteDoc(d.ref)),
       ...flatBills.docs.map((d) => deleteDoc(d.ref)),
       ...alerts.docs.map((d) => deleteDoc(d.ref)),
@@ -129,6 +132,16 @@ export const firestoreStore = {
 
   async deleteReading(id: string): Promise<void> {
     await deleteDoc(doc(db(), Collections.reading(id)))
+  },
+
+  async getMeters(): Promise<WaterMeter[]> {
+    const snap = await getDocs(collection(db(), Collections.meters()))
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as WaterMeter)
+  },
+
+  async upsertMeter(meter: WaterMeter): Promise<void> {
+    const { id, ...data } = meter
+    await writeDoc(doc(db(), Collections.meter(id)), { ...data, id })
   },
 
   async getBillingConfig(month: string): Promise<BillingConfig | null> {

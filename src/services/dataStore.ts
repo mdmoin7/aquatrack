@@ -3,6 +3,7 @@ import type {
   BillingConfig,
   Flat,
   MeterReading,
+  WaterMeter,
   StoredFlatBill,
   TankerDelivery,
   TankerVendor,
@@ -72,6 +73,23 @@ export const dataStore = {
       return
     }
     await indexedDbStore.deleteReading(id)
+  },
+  async getMeters(): Promise<WaterMeter[]> {
+    if (!isCloudBackend()) return indexedDbStore.getMeters()
+    const key = 'meters:all'
+    const cached = await cacheGet<WaterMeter[]>(key)
+    if (cached) return cached
+    const meters = await firestoreStore.getMeters()
+    await cacheSet(key, meters)
+    return meters
+  },
+  async upsertMeter(meter: WaterMeter): Promise<void> {
+    if (isCloudBackend()) {
+      await firestoreStore.upsertMeter(meter)
+      await cacheInvalidate('meters:all')
+      return
+    }
+    await indexedDbStore.upsertMeter(meter)
   },
   async getBillingConfig(month: string): Promise<BillingConfig | null> {
     return isCloudBackend() ? firestoreStore.getBillingConfig(month) : indexedDbStore.getBillingConfig(month)

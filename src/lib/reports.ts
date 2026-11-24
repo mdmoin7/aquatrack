@@ -2,6 +2,7 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import type { FlatBill, InvoiceRow, SocietyStats } from '@/types'
 import { formatCurrency, formatKL, formatMonthLabel } from '@/lib/billing'
+import { formatMeterBreakdown } from '@/lib/readings'
 
 export function exportBillsCSV(bills: FlatBill[], month: string): void {
   const headers = [
@@ -18,6 +19,7 @@ export function exportBillsCSV(bills: FlatBill[], month: string): void {
     'Efficiency Score',
     'Entered By',
     'Last Updated',
+    'Meter Breakdown',
   ]
   const rows = bills.map((b) => [
     b.flat.block,
@@ -33,6 +35,7 @@ export function exportBillsCSV(bills: FlatBill[], month: string): void {
     b.efficiencyScore,
     b.enteredBy,
     b.lastUpdated,
+    formatMeterBreakdown(b.meterSegments),
   ])
   downloadCSV([headers, ...rows], `aquatrack-bills-${month}.csv`)
 }
@@ -69,8 +72,7 @@ export function buildInvoiceRows(bills: FlatBill[], month: string): InvoiceRow[]
     chargeType: 'Water',
     chargeDescription: [
       `Billing: ${formatMonthLabel(month)}`,
-      `Opening: ${bill.openingReading} L`,
-      `Closing: ${bill.closingReading} L`,
+      formatMeterBreakdown(bill.meterSegments) || `Opening: ${bill.openingReading} L | Closing: ${bill.closingReading} L`,
       `Consumption: ${formatKL(bill.consumptionKL)}`,
       `Rate: ${formatCurrency(bill.effectiveRatePerKL)}/kL`,
       `Total: ${formatCurrency(bill.finalBill)}`,
@@ -101,6 +103,7 @@ export function exportBillsPDF(bills: FlatBill[], month: string, stats: SocietyS
       'Bill',
       'Efficiency',
       'Entered By',
+      'Meters',
     ]],
     body: bills.map((b) => [
       b.flat.label,
@@ -111,6 +114,7 @@ export function exportBillsPDF(bills: FlatBill[], month: string, stats: SocietyS
       b.finalBill.toFixed(2),
       b.efficiencyScore,
       b.enteredBy,
+      formatMeterBreakdown(b.meterSegments) || '—',
     ]),
     styles: { fontSize: 8 },
     headStyles: { fillColor: [14, 165, 233] },

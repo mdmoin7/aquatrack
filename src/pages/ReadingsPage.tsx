@@ -1,10 +1,11 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { Info, Pencil, Plus, Trash2, Upload, X } from "lucide-react";
+import { Info, Pencil, Plus, RefreshCw, Trash2, Upload, X } from "lucide-react";
 import DataTable from "react-data-table-component";
 import { OfflineSyncBanner } from "@/components/common/OfflineSyncBanner";
 import { PageHeader } from "@/components/common/PageHeader";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { FlatReadingTimeline } from "@/components/readings/FlatReadingTimeline";
+import { ReplaceMeterPanel } from "@/components/readings/ReplaceMeterPanel";
 import { MonthRolloverPanel } from "@/components/readings/MonthRolloverPanel";
 import { ReadingUploadPanel } from "@/components/readings/ReadingUploadPanel";
 import { useAppContext } from "@/context/AppContext";
@@ -25,6 +26,7 @@ import {
   meterDisplayToLiters,
   parseMeterDisplayInput,
 } from "@/lib/meterReading";
+import { meterSerial, projectMonthConsumptionLiters } from "@/lib/readings";
 import {
   deleteReading,
   getFlats,
@@ -35,7 +37,8 @@ import {
   saveReading,
   type OpeningReadingInfo,
 } from "@/services/readingsService";
-import type { Flat, MeterReading, MonthlyFlatSummary } from "@/types";
+import { ensureLegacyMeters, getMeters } from "@/services/meterService";
+import type { Flat, MeterReading, MonthlyFlatSummary, WaterMeter } from "@/types";
 import type { MonthRolloverStatus } from "@/lib/monthRollover";
 
 export function ReadingsPage() {
@@ -44,7 +47,9 @@ export function ReadingsPage() {
   const canEdit = canEnterReadings(user?.role);
   const canDelete = canManageReadings(user?.role);
   const canUpload = canManageReadings(user?.role);
+  const canReplace = canManageReadings(user?.role);
   const [readings, setReadings] = useState<MeterReading[]>([]);
+  const [meters, setMeters] = useState<WaterMeter[]>([]);
   const [summaries, setSummaries] = useState<MonthlyFlatSummary[]>([]);
   const [flats, setFlats] = useState<Flat[]>([]);
   const [rolloverStatus, setRolloverStatus] =
@@ -62,6 +67,7 @@ export function ReadingsPage() {
   );
   const [error, setError] = useState("");
   const [showUpload, setShowUpload] = useState(false);
+  const [showReplace, setShowReplace] = useState(false);
   const [timelineFlatId, setTimelineFlatId] = useState<string | null>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
 
@@ -75,17 +81,26 @@ export function ReadingsPage() {
 
   const load = async () => {
     setLoading(true);
-    const [r, s, f, rollover] = await Promise.all([
-      getReadings(selectedMonth),
-      getMonthlySummaries(selectedMonth),
-      getFlats(),
-      getMonthRolloverStatus(selectedMonth),
-    ]);
-    setReadings(r);
-    setSummaries(s);
-    setFlats(filterFlatsForUser(f, user));
-    setRolloverStatus(rollover);
-    setLoading(false);
+    setError("");
+    if (canReplace) void ensureLegacyMeters();
+    try {
+      const [r, s, f, rollover, meterRows] = await Promise.all([
+        getReadings(selectedMonth),
+        getMonthlySummaries(selectedMonth),
+        getFlats(),
+        getMonthRolloverStatus(selectedMonth),
+        getMeters(),
+      ]);
+      setReadings(r);
+      setMeters(meterRows);
+      setSummaries(s);
+      setFlats(filterFlatsForUser(f, user));
+      setRolloverStatus(rollover);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load readings");
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -103,6 +118,7 @@ export function ReadingsPage() {
   const flatMap = Object.fromEntries(flats.map((f) => [f.id, f]));
   const summaryMap = Object.fromEntries(summaries.map((s) => [s.flatId, s]));
   const isFirstCycle = openingInfo?.source === "none";
+  const isMeterStart = openingInfo?.source === "meter_start";
   const isMissingPrior = openingInfo?.source === "missing_prior";
   const isAdditionalEntry = openingInfo?.source === "previous_entry";
 
@@ -110,6 +126,7 @@ export function ReadingsPage() {
     setEditingId(null);
     setShowForm(true);
     setShowUpload(false);
+    setShowReplace(false);
     setForm({ flatId: "", closingReading: "", initialOpeningReading: "" });
     setOpeningInfo(null);
     setError("");
@@ -237,6 +254,11 @@ export function ReadingsPage() {
       sortable: true,
     },
     {
+      name: "Meter",
+      selector: (row: MeterReading) => meterSerial(row.meterId, meters),
+      sortable: true,
+    },
+    {
       name: "Entry #",
       selector: (row: MeterReading) => entryIndexById.get(row.id) ?? "—",
       sortable: true,
@@ -320,8 +342,10 @@ export function ReadingsPage() {
   const projectedMonthlyKL =
     resolvedOpeningLiters !== null && closingLiters !== null && form.flatId
       ? litersToKL(
-          calculateConsumption(
-            summaryMap[form.flatId]?.openingReading ?? resolvedOpeningLiters,
+          projectMonthConsumptionLiters(
+            summaryMap[form.flatId],
+            openingInfo?.meterId,
+            resolvedOpeningLiters,
             meterDisplayToLiters(closingLiters),
           ),
         )
@@ -356,6 +380,20 @@ export function ReadingsPage() {
                   Upload CSV
                 </button>
               )}
+              {canReplace && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowReplace(true);
+                    setShowForm(false);
+                    setShowUpload(false);
+                  }}
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  Replace meter
+                </button>
+              )}
               <button
                 type="button"
                 onClick={openAddForm}
@@ -371,11 +409,30 @@ export function ReadingsPage() {
 
       {canEdit && <OfflineSyncBanner />}
 
+      {error && !showForm && !showReplace && (
+        <p className="mb-4 text-sm text-rose-600">{error}</p>
+      )}
+
       {rolloverStatus && (
         <MonthRolloverPanel
           status={rolloverStatus}
           readOnly={!canEdit}
           onRepaired={() => {
+            refresh();
+            void load();
+          }}
+        />
+      )}
+
+      {canReplace && showReplace && (
+        <ReplaceMeterPanel
+          flats={flats}
+          defaultMonth={selectedMonth}
+          enteredBy={user?.displayName ?? "Unknown"}
+          enteredByRole={user?.role ?? "admin"}
+          onClose={() => setShowReplace(false)}
+          onReplaced={() => {
+            setShowReplace(false);
             refresh();
             void load();
           }}
@@ -434,7 +491,9 @@ export function ReadingsPage() {
                   <span className="ml-1 font-normal text-slate-400">
                     {isAdditionalEntry
                       ? "— from last entry"
-                      : "— from previous month"}
+                      : isMeterStart
+                        ? "— new meter start"
+                        : "— from previous month"}
                   </span>
                 )}
               </label>
@@ -532,6 +591,20 @@ export function ReadingsPage() {
             </div>
           )}
 
+          {isMeterStart && !editingId && openingInfo?.serialNumber && (
+            <div className="mt-4 flex items-start gap-2 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <Info className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>
+                Meter <strong>{openingInfo.serialNumber}</strong> starts at{" "}
+                <strong>
+                  {litersToMeterDisplay(openingInfo.openingReading ?? 0).toLocaleString()}
+                </strong>{" "}
+                on the dial. Enter the new closing from that meter. It does not
+                continue the previous meter’s dial.
+              </span>
+            </div>
+          )}
+
           {isFirstCycle && form.flatId && !editingId && (
             <div className="mt-4 flex items-start gap-2 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
               <Info className="mt-0.5 h-4 w-4 shrink-0" />
@@ -600,8 +673,8 @@ export function ReadingsPage() {
             Monthly Billing Summary
           </h3>
           <p className="mb-4 text-xs text-slate-500">
-            One bill per flat per month — opening from first entry, closing from
-            latest entry.
+            One bill per flat per month. A replaced meter keeps its own opening
+            and closing, and the month’s usage is the sum of each meter.
           </p>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {summaries.map((s) => (
@@ -622,10 +695,22 @@ export function ReadingsPage() {
                   <p className="font-medium text-slate-900">
                     {flatMap[s.flatId]?.label ?? s.flatId}
                   </p>
-                  <p className="mt-1 text-slate-600">
-                    {s.openingReading.toLocaleString()} →{" "}
-                    {s.closingReading.toLocaleString()} L
-                  </p>
+                  {(s.meterSegments?.length ?? 0) > 1 ? (
+                    <div className="mt-1 space-y-0.5 text-xs text-slate-600">
+                      {s.meterSegments.map((segment) => (
+                        <p key={segment.meterId}>
+                          {segment.serialNumber}: {segment.openingReading.toLocaleString()} →{" "}
+                          {segment.closingReading.toLocaleString()} L (
+                          {formatKL(segment.consumptionKL)})
+                        </p>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-1 text-slate-600">
+                      {s.openingReading.toLocaleString()} →{" "}
+                      {s.closingReading.toLocaleString()} L
+                    </p>
+                  )}
                   <p className="mt-1 font-semibold text-sky-700">
                     {formatKL(s.consumptionKL)} · {s.readingCount} entr
                     {s.readingCount === 1 ? "y" : "ies"}
@@ -663,6 +748,7 @@ export function ReadingsPage() {
                     </div>
                     <FlatReadingTimeline
                       entries={s.readings}
+                      meters={meters}
                       emptyMessage="No entries for this flat in the selected month."
                     />
                   </div>

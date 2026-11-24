@@ -1,4 +1,4 @@
-import type { BlockId, Flat, MeterReading, MonthlyFlatSummary, UserRole } from '@/types'
+import type { BlockId, Flat, MeterReading, MonthlyFlatSummary, UserRole, WaterMeter } from '@/types'
 import {
   calculateConsumption,
   formatMonthLabel,
@@ -13,10 +13,11 @@ import { buildSuperAdminOperationalAlerts } from '@/lib/operationalNotifications
 import {
   aggregateFlatMonth,
   aggregateMonthlyReadings,
-  getFlatReadingsForMonth,
+  readingsForMeter,
   sortReadingsChronologically,
   summaryToBillingReading,
 } from '@/lib/readings'
+import { activeMeterForFlat, ensureActiveMeterForReading, ensureLegacyMeters } from '@/services/meterService'
 import { cacheGet, cacheInvalidate, cacheSet, CacheKeys } from '@/lib/cache'
 import {
   enqueuePendingReading,
@@ -39,20 +40,34 @@ function generateId(): string {
 
 export interface OpeningReadingInfo {
   openingReading: number | null
-  source: 'previous_closing' | 'previous_entry' | 'initial' | 'missing_prior' | 'none'
+  source: 'previous_closing' | 'previous_entry' | 'meter_start' | 'initial' | 'missing_prior' | 'none'
   previousMonth?: string
   previousClosing?: number
   entryNumber?: number
   monthlyConsumptionKL?: number
+  meterId?: string
+  serialNumber?: string
+}
+
+async function loadMetersAndReadings(): Promise<{ readings: MeterReading[]; meters: WaterMeter[] }> {
+  const readings = await dataStore.getReadings()
+  try {
+    const meters = await dataStore.getMeters()
+    return { readings, meters }
+  } catch {
+    return { readings, meters: [] }
+  }
 }
 
 export async function resolveOpeningReading(
   flatId: string,
   month: string,
 ): Promise<OpeningReadingInfo> {
-  const allReadings = await dataStore.getReadings()
-  const monthEntries = getFlatReadingsForMonth(flatId, month, allReadings)
-  const monthlySummary = aggregateFlatMonth(flatId, month, allReadings)
+  const { readings: allReadings, meters } = await loadMetersAndReadings()
+  const active = activeMeterForFlat(meters, flatId)
+  const monthEntries = readingsForMeter(flatId, month, allReadings, active?.id)
+  const monthlySummary = aggregateFlatMonth(flatId, month, allReadings, meters)
+  const meterInfo = { meterId: active?.id, serialNumber: active?.serialNumber }
 
   if (monthEntries.length > 0) {
     const last = monthEntries[monthEntries.length - 1]
@@ -62,18 +77,41 @@ export async function resolveOpeningReading(
       previousClosing: last.closingReading,
       entryNumber: monthEntries.length + 1,
       monthlyConsumptionKL: monthlySummary?.consumptionKL,
+      ...meterInfo,
     }
   }
 
   const previousMonth = getPreviousMonth(month)
-  const prevSummary = aggregateFlatMonth(flatId, previousMonth, allReadings)
-  if (prevSummary) {
+  if (active) {
+    const previousEntries = readingsForMeter(flatId, previousMonth, allReadings, active.id)
+    if (previousEntries.length > 0) {
+      const closing = previousEntries[previousEntries.length - 1].closingReading
+      return {
+        openingReading: closing,
+        source: 'previous_closing',
+        previousMonth,
+        previousClosing: closing,
+        entryNumber: 1,
+        ...meterInfo,
+      }
+    }
+    const earlierOnMeter = allReadings.some(
+      (reading) => reading.flatId === flatId && reading.meterId === active.id && reading.month < previousMonth,
+    )
+    if (earlierOnMeter) {
+      return {
+        openingReading: null,
+        source: 'missing_prior',
+        previousMonth,
+        entryNumber: 1,
+        ...meterInfo,
+      }
+    }
     return {
-      openingReading: prevSummary.closingReading,
-      source: 'previous_closing',
-      previousMonth,
-      previousClosing: prevSummary.closingReading,
+      openingReading: active.startReading,
+      source: 'meter_start',
       entryNumber: 1,
+      ...meterInfo,
     }
   }
 
@@ -97,8 +135,11 @@ export async function getMonthRolloverStatus(month: string): Promise<MonthRollov
   const cached = await cacheGet<MonthRolloverStatus>(cacheKey)
   if (cached) return cached
 
-  const [flats, allReadings] = await Promise.all([getFlats(), dataStore.getReadings()])
-  const status = buildMonthRolloverStatus(month, flats, allReadings)
+  const [flats, { readings: allReadings, meters }] = await Promise.all([
+    getFlats(),
+    loadMetersAndReadings(),
+  ])
+  const status = buildMonthRolloverStatus(month, flats, allReadings, meters)
   await cacheSet(cacheKey, status, 60_000)
   return status
 }
@@ -107,17 +148,19 @@ export async function repairFlatRolloverOpening(
   flatId: string,
   month: string,
 ): Promise<boolean> {
-  const allReadings = await dataStore.getReadings()
+  const { readings: allReadings, meters } = await loadMetersAndReadings()
   const flats = await getFlats()
   const flat = flats.find((f) => f.id === flatId)
   if (!flat) throw new Error('Flat not found.')
 
-  const info = buildFlatRolloverInfo(flat, month, allReadings)
+  const info = buildFlatRolloverInfo(flat, month, allReadings, meters)
   if (info.status !== 'mismatch' || info.expectedOpening === undefined) return false
 
-  const entries = getFlatReadingsForMonth(flatId, month, allReadings)
+  const active = activeMeterForFlat(meters, flatId)
+  const entries = readingsForMeter(flatId, month, allReadings, active?.id)
   const first = entries[0]
   if (!first) return false
+  if (active && first.meterId && first.meterId !== active.id) return false
 
   const config = await dataStore.getBillingConfig(month)
   if (config?.locked) throw new Error('Billing for this month is locked.')
@@ -148,7 +191,7 @@ export async function repairFlatRolloverOpening(
 
   await dataStore.upsertReading(updated)
   await cacheInvalidate(CacheKeys.readings(month))
-  await cacheInvalidate(`monthly-summaries:${month}`)
+  await cacheInvalidate(`monthly-summaries:v2:${month}`)
   await cacheInvalidate(`month-rollover:${month}`)
   await cacheInvalidate(CacheKeys.dashboard(month))
   return true
@@ -171,11 +214,12 @@ function assertFlatCanAddReading(
   month: string,
   allReadings: MeterReading[],
   flats: Flat[],
+  meters: WaterMeter[],
 ): void {
   const flat = flats.find((f) => f.id === flatId)
   if (!flat) return
 
-  const info = buildFlatRolloverInfo(flat, month, allReadings)
+  const info = buildFlatRolloverInfo(flat, month, allReadings, meters)
   if (info.status === 'missing_prior') {
     throw new Error(
       `Cannot add reading: ${flat.label} has no ${formatMonthLabel(info.previousMonth)} closing. Complete the prior month first.`,
@@ -186,6 +230,7 @@ function assertFlatCanAddReading(
 async function cascadeOpeningToNextMonth(
   flatId: string,
   month: string,
+  meterId: string | undefined,
   monthlyClosing: number,
 ): Promise<void> {
   const nextMonth = getNextMonth(month)
@@ -193,10 +238,13 @@ async function cascadeOpeningToNextMonth(
   if (nextConfig?.locked) return
 
   const allReadings = await dataStore.getReadings()
-  const nextEntries = getFlatReadingsForMonth(flatId, nextMonth, allReadings)
+  const nextEntries = readingsForMeter(flatId, nextMonth, allReadings, meterId).filter(
+    (reading) => !meterId || reading.meterId === meterId,
+  )
   if (nextEntries.length === 0) return
 
   const first = nextEntries[0]
+  if (first.meterId && meterId && first.meterId !== meterId) return
   if (first.openingReading === monthlyClosing) return
 
   const consumptionLiters = calculateConsumption(monthlyClosing, first.closingReading)
@@ -252,20 +300,22 @@ export async function getReadings(month: string): Promise<MeterReading[]> {
 }
 
 export async function getMonthlySummaries(month: string): Promise<MonthlyFlatSummary[]> {
-  const cacheKey = `monthly-summaries:${month}`
+  const cacheKey = `monthly-summaries:v2:${month}`
   const cached = await cacheGet<MonthlyFlatSummary[]>(cacheKey)
-  if (cached) return cached
-  const summaries = aggregateMonthlyReadings(month, await dataStore.getReadings())
+  if (cached?.every((summary) => Array.isArray(summary.meterSegments))) return cached
+  const { readings, meters } = await loadMetersAndReadings()
+  const summaries = aggregateMonthlyReadings(month, readings, meters)
   await cacheSet(cacheKey, summaries)
   return summaries
 }
 
 export async function getReadingHistory(flatId: string): Promise<MeterReading[]> {
-  const all = (await dataStore.getReadings()).filter((r) => r.flatId === flatId)
+  const { readings, meters } = await loadMetersAndReadings()
+  const all = readings.filter((r) => r.flatId === flatId)
   const months = [...new Set(all.map((r) => r.month))].sort()
   return months
     .map((month) => {
-      const summary = aggregateFlatMonth(flatId, month, all)
+      const summary = aggregateFlatMonth(flatId, month, readings, meters)
       return summary ? summaryToBillingReading(summary) : null
     })
     .filter((r): r is MeterReading => r !== null)
@@ -276,7 +326,7 @@ export async function getFlatReadingEntries(
   flatId: string,
   month?: string,
 ): Promise<MeterReading[]> {
-  const all = await dataStore.getReadings()
+  const { readings: all } = await loadMetersAndReadings()
   let entries = all.filter((r) => r.flatId === flatId)
   if (month) entries = entries.filter((r) => r.month === month)
   return sortReadingsChronologically(entries)
@@ -291,7 +341,7 @@ export async function saveReading(
   if (!navigator.onLine) {
     const pending = await enqueuePendingReading(input, existingId)
     await cacheInvalidate(CacheKeys.readings(input.month))
-    await cacheInvalidate(`monthly-summaries:${input.month}`)
+    await cacheInvalidate(`monthly-summaries:v2:${input.month}`)
     return pendingToMeterReading(pending)
   }
   return persistReading(input, existingId)
@@ -328,11 +378,12 @@ async function persistReading(
     throw new Error('Billing for this month is locked. Readings cannot be modified.')
   }
 
-  const allReadings = await dataStore.getReadings()
+  await ensureLegacyMeters()
+  const { readings: allReadings, meters } = await loadMetersAndReadings()
   const flats = await getFlats()
 
   if (!existingId) {
-    assertFlatCanAddReading(input.flatId, input.month, allReadings, flats)
+    assertFlatCanAddReading(input.flatId, input.month, allReadings, flats, meters)
   }
 
   const openingInfo = await resolveOpeningReading(input.flatId, input.month)
@@ -343,6 +394,8 @@ async function persistReading(
   } else if (openingInfo.source === 'previous_closing' && openingInfo.openingReading !== null) {
     openingReading = openingInfo.openingReading
   } else if (openingInfo.source === 'previous_entry' && openingInfo.openingReading !== null) {
+    openingReading = openingInfo.openingReading
+  } else if (openingInfo.source === 'meter_start' && openingInfo.openingReading !== null) {
     openingReading = openingInfo.openingReading
   } else if (input.initialOpeningReading !== undefined) {
     openingReading = input.initialOpeningReading
@@ -361,11 +414,16 @@ async function persistReading(
   const consumptionLiters = calculateConsumption(openingReading, input.closingReading)
   const now = new Date().toISOString()
   const existing = existingId ? allReadings.find((r) => r.id === existingId) : undefined
+  const meter = existing?.meterId
+    ? meters.find((item) => item.id === existing.meterId) ?? activeMeterForFlat(meters, input.flatId)
+    : await ensureActiveMeterForReading(input.flatId, openingReading, now, input.enteredBy)
 
   const reading: MeterReading = {
     id: existingId ?? generateId(),
     flatId: input.flatId,
     month: input.month,
+    meterId: existing?.meterId ?? meter?.id,
+    entryKind: existing?.entryKind ?? 'routine',
     openingReading,
     closingReading: input.closingReading,
     consumptionLiters,
@@ -388,17 +446,19 @@ async function persistReading(
 
   await dataStore.upsertReading(reading)
 
-  const monthlySummary = aggregateFlatMonth(
-    input.flatId,
-    input.month,
-    await dataStore.getReadings(),
+  const savedReadings = await dataStore.getReadings()
+  const savedMeters = await dataStore.getMeters()
+  const monthlySummary = aggregateFlatMonth(input.flatId, input.month, savedReadings, savedMeters)
+  const meterEntries = readingsForMeter(input.flatId, input.month, savedReadings, reading.meterId).filter(
+    (entry) => !reading.meterId || entry.meterId === reading.meterId,
   )
-  if (monthlySummary) {
-    await cascadeOpeningToNextMonth(input.flatId, input.month, monthlySummary.closingReading)
+  const meterClosing = meterEntries[meterEntries.length - 1]?.closingReading
+  if (meterClosing !== undefined) {
+    await cascadeOpeningToNextMonth(input.flatId, input.month, reading.meterId, meterClosing)
   }
 
   await cacheInvalidate(CacheKeys.readings(input.month))
-  await cacheInvalidate(`monthly-summaries:${input.month}`)
+  await cacheInvalidate(`monthly-summaries:v2:${input.month}`)
   await cacheInvalidate(`month-rollover:${input.month}`)
   await cacheInvalidate(`month-rollover:${getNextMonth(input.month)}`)
   await cacheInvalidate(CacheKeys.dashboard(input.month))
@@ -415,7 +475,13 @@ async function persistReading(
       ? recentMonths.reduce((sum, r) => sum + r.consumptionKL, 0) / recentMonths.length
       : undefined
     const billingReading = summaryToBillingReading(monthlySummary)
-    const alerts = generateAlertsForReading(billingReading, flat, prev, recentAverageKL)
+    const alerts = generateAlertsForReading(
+      billingReading,
+      flat,
+      prev,
+      recentAverageKL,
+      monthlySummary.meterSegments,
+    )
     const operationalAlerts = await buildSuperAdminOperationalAlerts(
       input.month,
       flat,
@@ -436,7 +502,7 @@ export async function deleteReading(
 ): Promise<void> {
   if (!canDelete) throw new Error('You do not have permission to delete readings.')
 
-  const all = await dataStore.getReadings()
+  const { readings: all } = await loadMetersAndReadings()
   const reading = all.find((r) => r.id === id)
   if (!reading) throw new Error('Reading not found.')
 
@@ -445,21 +511,19 @@ export async function deleteReading(
 
   await dataStore.deleteReading(id)
 
-  const remainingSummary = aggregateFlatMonth(
+  const remaining = readingsForMeter(
     reading.flatId,
     reading.month,
     await dataStore.getReadings(),
-  )
-  if (remainingSummary) {
-    await cascadeOpeningToNextMonth(
-      reading.flatId,
-      reading.month,
-      remainingSummary.closingReading,
-    )
+    reading.meterId,
+  ).filter((entry) => !reading.meterId || entry.meterId === reading.meterId)
+  const meterClosing = remaining[remaining.length - 1]?.closingReading
+  if (meterClosing !== undefined) {
+    await cascadeOpeningToNextMonth(reading.flatId, reading.month, reading.meterId, meterClosing)
   }
 
   await cacheInvalidate(CacheKeys.readings(reading.month))
-  await cacheInvalidate(`monthly-summaries:${reading.month}`)
+  await cacheInvalidate(`monthly-summaries:v2:${reading.month}`)
   await cacheInvalidate(`month-rollover:${reading.month}`)
   await cacheInvalidate(`month-rollover:${getNextMonth(reading.month)}`)
   await cacheInvalidate(CacheKeys.dashboard(reading.month))
@@ -472,7 +536,7 @@ async function cacheInvalidatePrefixAnalytics(flatId: string): Promise<void> {
   const months = getPreviousMonths(12, getCurrentMonth())
   await Promise.all([
     ...months.map((m) => cacheInvalidate(CacheKeys.flatAnalytics(flatId, m))),
-    ...months.map((m) => cacheInvalidate(`monthly-summaries:${m}`)),
+    ...months.map((m) => cacheInvalidate(`monthly-summaries:v2:${m}`)),
   ])
 }
 

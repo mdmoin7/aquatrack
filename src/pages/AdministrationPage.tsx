@@ -6,6 +6,7 @@ import { PageHeader } from '@/components/common/PageHeader'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { useAppContext } from '@/context/AppContext'
 import { formatCurrency, formatKL, formatMonthLabel } from '@/lib/billing'
+import { formatMeterBreakdown } from '@/lib/readings'
 import { buildInvoiceRows, exportBillsCSV, exportBillsPDF, exportInvoiceSheet } from '@/lib/reports'
 import {
   generateAndLockFlatBills,
@@ -80,6 +81,12 @@ export function AdministrationPage() {
     { name: 'Opening', selector: (row: FlatBill) => row.openingReading, sortable: true },
     { name: 'Closing', selector: (row: FlatBill) => row.closingReading, sortable: true },
     { name: 'Consumption', selector: (row: FlatBill) => formatKL(row.consumptionKL), sortable: true },
+    {
+      name: 'Meters',
+      selector: (row: FlatBill) => formatMeterBreakdown(row.meterSegments) || '—',
+      wrap: true,
+      grow: 2,
+    },
     {
       name: '₹/kL',
       selector: (row: FlatBill) => row.effectiveRatePerKL.toFixed(2),

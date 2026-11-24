@@ -3,6 +3,7 @@ import type {
   BillingConfig,
   Flat,
   MeterReading,
+  WaterMeter,
   StoredFlatBill,
   TankerDelivery,
   TankerVendor,
@@ -15,12 +16,13 @@ import type {
 const DB_NAME = 'aquatrack-local'
 // Increment whenever the required object-store schema changes. Version 2 also
 // repairs databases created by older builds that did not contain all stores.
-const DB_VERSION = 2
+const DB_VERSION = 3
 const LEGACY_KEY = 'aquatrack-data'
 
 const STORES = [
   'flats',
   'readings',
+  'meters',
   'billingConfigs',
   'flatBills',
   'alerts',
@@ -37,6 +39,7 @@ type StoreName = (typeof STORES)[number]
 interface AppData {
   flats: Flat[]
   readings: MeterReading[]
+  meters: WaterMeter[]
   billingConfigs: BillingConfig[]
   flatBills: StoredFlatBill[]
   alerts: Alert[]
@@ -51,6 +54,7 @@ interface AppData {
 const EMPTY_DATA: AppData = {
   flats: [],
   readings: [],
+  meters: [],
   billingConfigs: [],
   flatBills: [],
   alerts: [],
@@ -186,8 +190,8 @@ async function migrateLegacyData(): Promise<void> {
   }
 
   for (const store of STORES) {
-    const records = data[store]
-    for (const record of records as Array<{ id: string }>) {
+    const records = (data[store] ?? []) as Array<{ id: string }>
+    for (const record of records) {
       await put(store, record)
     }
   }
@@ -211,6 +215,8 @@ export const indexedDbStore = {
   },
   async upsertReading(item: MeterReading): Promise<void> { await ready(); await put('readings', item) },
   async deleteReading(id: string): Promise<void> { await ready(); await remove('readings', id) },
+  async getMeters(): Promise<WaterMeter[]> { await ready(); return getAll<WaterMeter>('meters') },
+  async upsertMeter(item: WaterMeter): Promise<void> { await ready(); await put('meters', item) },
   async getBillingConfig(month: string): Promise<BillingConfig | null> {
     await ready(); const items = await getAll<BillingConfig>('billingConfigs'); return items.find((item) => item.month === month) ?? null
   },

@@ -1,6 +1,6 @@
-import type { Flat, MeterReading } from '@/types'
+import type { Flat, MeterReading, WaterMeter } from '@/types'
 import { formatMonthLabel, getPreviousMonth } from '@/lib/billing'
-import { aggregateFlatMonth, getFlatReadingsForMonth } from '@/lib/readings'
+import { readingsForMeter } from '@/lib/readings'
 
 export type FlatRolloverStatus =
   | 'complete'
@@ -42,15 +42,41 @@ function flatHadReadingBeforeMonth(
   return allReadings.some((r) => r.flatId === flatId && r.month < month)
 }
 
+function activeMeter(meters: WaterMeter[], flatId: string): WaterMeter | undefined {
+  return meters.find((meter) => meter.flatId === flatId && meter.status === 'active')
+}
+
+/** Opening the active meter should use this month. A new dial does not inherit the removed meter's closing. */
+function expectedActiveOpening(
+  flatId: string,
+  month: string,
+  allReadings: MeterReading[],
+  meter: WaterMeter | undefined,
+): { expected?: number; previousClosing?: number; missingPrior: boolean } {
+  if (!meter) return { missingPrior: false }
+  const previousMonth = getPreviousMonth(month)
+  const previousEntries = readingsForMeter(flatId, previousMonth, allReadings, meter.id)
+  if (previousEntries.length > 0) {
+    const closing = previousEntries[previousEntries.length - 1].closingReading
+    return { expected: closing, previousClosing: closing, missingPrior: false }
+  }
+  const earlierOnMeter = allReadings.some(
+    (reading) => reading.flatId === flatId && reading.meterId === meter.id && reading.month < previousMonth,
+  )
+  if (earlierOnMeter) return { missingPrior: true }
+  return { expected: meter.startReading, missingPrior: false }
+}
+
 export function buildFlatRolloverInfo(
   flat: Flat,
   month: string,
   allReadings: MeterReading[],
+  meters: WaterMeter[] = [],
 ): FlatRolloverInfo {
   const previousMonth = getPreviousMonth(month)
-  const prevSummary = aggregateFlatMonth(flat.id, previousMonth, allReadings)
-  const currentEntries = getFlatReadingsForMonth(flat.id, month, allReadings)
-  const currentSummary = aggregateFlatMonth(flat.id, month, allReadings)
+  const meter = activeMeter(meters, flat.id)
+  const currentEntries = readingsForMeter(flat.id, month, allReadings, meter?.id)
+  const expected = expectedActiveOpening(flat.id, month, allReadings, meter)
   const hadEarlierHistory = flatHadReadingBeforeMonth(flat.id, previousMonth, allReadings)
 
   const base = {
@@ -59,32 +85,36 @@ export function buildFlatRolloverInfo(
     previousMonth,
   }
 
-  if (currentSummary && currentEntries.length > 0) {
+  if (currentEntries.length > 0) {
     const first = currentEntries[0]
-    if (prevSummary && first.openingReading !== prevSummary.closingReading) {
+    if (expected.expected !== undefined && first.openingReading !== expected.expected) {
       return {
         ...base,
         status: 'mismatch',
-        previousClosing: prevSummary.closingReading,
-        expectedOpening: prevSummary.closingReading,
+        previousClosing: expected.previousClosing,
+        expectedOpening: expected.expected,
         actualOpening: first.openingReading,
       }
     }
     return {
       ...base,
       status: 'complete',
-      previousClosing: prevSummary?.closingReading,
+      previousClosing: expected.previousClosing,
       expectedOpening: first.openingReading,
       actualOpening: first.openingReading,
     }
   }
 
-  if (prevSummary) {
+  if (expected.missingPrior) {
+    return { ...base, status: 'missing_prior' }
+  }
+
+  if (expected.expected !== undefined && (expected.previousClosing !== undefined || hadEarlierHistory)) {
     return {
       ...base,
       status: 'ready',
-      previousClosing: prevSummary.closingReading,
-      expectedOpening: prevSummary.closingReading,
+      previousClosing: expected.previousClosing,
+      expectedOpening: expected.expected,
     }
   }
 
@@ -99,9 +129,10 @@ export function buildMonthRolloverStatus(
   month: string,
   flats: Flat[],
   allReadings: MeterReading[],
+  meters: WaterMeter[] = [],
 ): MonthRolloverStatus {
   const previousMonth = getPreviousMonth(month)
-  const flatInfos = flats.map((flat) => buildFlatRolloverInfo(flat, month, allReadings))
+  const flatInfos = flats.map((flat) => buildFlatRolloverInfo(flat, month, allReadings, meters))
   const priorMonthFlatCount = new Set(
     allReadings.filter((r) => r.month === previousMonth).map((r) => r.flatId),
   ).size
